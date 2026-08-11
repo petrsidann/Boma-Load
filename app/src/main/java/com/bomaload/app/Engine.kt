@@ -8,7 +8,7 @@ import android.os.Looper
 import android.provider.Settings
 
 object Engine {
-    data class PinItem(val pin: String, var status: String = "PENDING", var note: String = "")
+    data class PinItem(val pin: String, var status: String = "PENDING", var note: String = "", var retries: Int = 0)
 
     val queue = mutableListOf<PinItem>()
     var mode = "SELF"
@@ -25,8 +25,8 @@ object Engine {
     private var decided = false
     private var phase = "IDLE"
 
-    const val NEXT_DELAY_MS = 800L
-    const val TIMEOUT_MS = 10000L
+    const val NEXT_DELAY_MS = 400L   // ~0.4s between vouchers – the speed floor
+    const val TIMEOUT_MS = 8000L     // safety net only
 
     fun addPin(p: String) {
         if (p.length == 16 && p != "1234567890123456" && queue.none { it.pin == p }) { queue.add(PinItem(p)); ui?.invoke() }
@@ -54,11 +54,12 @@ object Engine {
     }
 
     fun checkBalance() {
+        if (running) { log?.invoke("💰 Wait – automation running"); return }
         phase = "BALANCE"
         log?.invoke("💰 Checking balance…")
         dial("*144#")
         handler.postDelayed({
-            if (phase == "BALANCE") { phase = "IDLE"; log?.invoke("💰 Balance check timed out") }
+            if (phase == "BALANCE") { phase = "IDLE"; log?.invoke("💰 No balance response") }
         }, TIMEOUT_MS)
     }
 
@@ -97,7 +98,8 @@ object Engine {
         val t = text.lowercase()
 
         if (phase == "BALANCE") {
-            val m = Regex("ksh\\.?\\s*([0-9][0-9,.]*)").find(t)
+            val m = Regex("ksh[\\s.:]*([0-9][0-9,.]*)").find(t)
+                ?: Regex("balance[^0-9]{0,10}([0-9][0-9,.]*)").find(t)
             if (m != null) {
                 balance = m.groupValues[1]
                 log?.invoke("💰 Balance: Ksh $balance")
@@ -110,7 +112,13 @@ object Engine {
 
         if (!running) return
 
-        if (t.contains("enter the number") || t.contains("msisdn")) {
+        // Only listen to real Safaricom/USSD dialogs – never your screen
+        val marker = t.contains("safaricom message") || t.contains("kindly wait") ||
+                t.contains("msisdn") || t.contains("ussd") || t.contains("voucher") ||
+                t.contains("top up")
+        if (!marker) return
+
+        if (t.contains("enter the number") || (t.contains("msisdn") && t.contains("back"))) {
             service?.respondWithNumber(other0)
             return
         }
@@ -131,11 +139,26 @@ object Engine {
 
         val item = current ?: return
         when {
-            listOf("been used", "already used", "invalid", "expired", "not valid", "wrong pin", "error from application", "failed")
+            listOf("connection problem", "invalid mmi", "network error", "try again")
+                .any { t.contains(it) } -> {
+                if (item.retries < 1) {
+                    item.retries++
+                    decided = true
+                    item.status = "PENDING"
+                    log?.invoke("🔁 ••••${item.pin.takeLast(4)} – network hiccup, auto-retry")
+                    service?.clickButton("OK")
+                    handler.postDelayed({ if (running) next() }, 300)
+                } else {
+                    decided = true; fail(item, short(t)); service?.clickButton("OK"); goNext()
+                }
+            }
+            listOf("been used", "already used", "invalid", "expired", "not valid", "wrong pin",
+                "does not exist", "error from application", "failed")
                 .any { t.contains(it) } -> {
                 decided = true; fail(item, short(t)); service?.clickButton("OK"); goNext()
             }
-            listOf("successfully", "topped up", "top up successful", "new balance", "your balance", "confirmed", "recharge")
+            listOf("successfully", "topped up", "top up successful", "new balance", "your balance",
+                "confirmed", "recharge")
                 .any { t.contains(it) } -> {
                 decided = true; ok(item, short(t)); service?.clickButton("OK"); goNext()
             }
