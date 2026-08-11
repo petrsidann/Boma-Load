@@ -22,8 +22,8 @@ class UssdAutomationService : AccessibilityService() {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
-        if (pkg == packageName) return                                    // ignore our own app
-        if (pkg.contains("systemui") || pkg.contains("launcher")) return  // ignore notification shade
+        if (pkg == packageName) return
+        if (pkg.contains("systemui") || pkg.contains("launcher")) return
         val dialerPkg = pkg.contains("phone") || pkg.contains("dialer") ||
                 pkg.contains("telecom") || pkg.contains("caller")
         val root = rootInActiveWindow ?: return
@@ -40,7 +40,27 @@ class UssdAutomationService : AccessibilityService() {
         for (i in 0 until node.childCount) node.getChild(i)?.let { collect(it, sb) }
     }
 
-    /** Types the target number into the USSD prompt and presses SEND. */
+    /** Presses OK (or given labels) so you never touch the screen. */
+    fun clickButton(vararg labels: String) {
+        try {
+            val root = rootInActiveWindow ?: return
+            for (label in labels) {
+                val nodes = root.findAccessibilityNodeInfosByText(label) ?: continue
+                for (n in nodes) {
+                    if ((n.text?.toString() ?: "").equals(label, true)) {
+                        var c: AccessibilityNodeInfo? = n
+                        while (c != null && !c.isClickable) c = c.parent
+                        if (c != null) {
+                            c.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                            return
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) { }
+    }
+
+    /** Types the target number into a USSD prompt and presses SEND. */
     fun respondWithNumber(number: String) {
         try {
             val root = rootInActiveWindow ?: return
