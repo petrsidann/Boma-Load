@@ -11,10 +11,12 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - name: Prepare Gradle
-        run: gradle wrapper --gradle-version 8.3 --no-daemon
+      - name: Get Gradle 8.3
+        run: |
+          curl -sL https://services.gradle.org/distributions/gradle-8.3-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d $HOME
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
+        run: $HOME/gradle-8.3/bin/gradle assembleDebug --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: BomaLoad-APK
