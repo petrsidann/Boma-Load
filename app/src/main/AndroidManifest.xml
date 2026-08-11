@@ -4,7 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="Boma Load"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_launcher"
         android:theme="@style/Theme.AppCompat.NoActionBar"
         android:allowBackup="true">
         <activity android:name=".MainActivity" android:exported="true">
