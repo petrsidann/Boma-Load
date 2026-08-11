@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Boma Load</string>
+    <string name="acc_desc">Reads Safaricom top-up confirmation screens so Boma Load can load your vouchers automatically.</string>
+</resources>
