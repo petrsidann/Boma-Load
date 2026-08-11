@@ -22,8 +22,18 @@
             android:textColor="#FFFFFF" android:buttonTint="#4CAF50"/>
     </RadioGroup>
 
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:layout_marginTop="8dp">
+        <Button android:id="@+id/bn1" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="0111363967"
+            android:backgroundTint="#1B3A1B" android:textColor="#4CAF50" android:textSize="12sp"/>
+        <Button android:id="@+id/bn2" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="0115108066"
+            android:backgroundTint="#1B3A1B" android:textColor="#4CAF50" android:textSize="12sp"/>
+    </LinearLayout>
+
     <EditText android:id="@+id/etOther" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:hint="Target number e.g. 0712345678"
+        android:layout_height="wrap_content" android:hint="Or type another target number"
         android:inputType="phone" android:textColor="#FFFFFF"
         android:textColorHint="#777777" android:visibility="gone"/>
 
