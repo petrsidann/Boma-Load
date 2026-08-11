@@ -1,6 +1,9 @@
 package com.bomaload.app
 
 import android.accessibilityservice.AccessibilityService
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Intent
 import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
@@ -11,6 +14,22 @@ class UssdAutomationService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         Engine.service = this
+        stayAlive()
+    }
+
+    /** Foreground notification so Infinix battery-killer can't kill the reader. */
+    private fun stayAlive() {
+        try {
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(
+                NotificationChannel("alive", "Automation active", NotificationManager.IMPORTANCE_LOW))
+            val n = Notification.Builder(this, "alive")
+                .setContentTitle("Boma Load active")
+                .setContentText("Reading Safaricom pop-ups for you")
+                .setSmallIcon(R.drawable.ic_launcher)
+                .build()
+            startForeground(9, n)
+        } catch (_: Exception) { }
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
@@ -31,7 +50,8 @@ class UssdAutomationService : AccessibilityService() {
         collect(root, sb)
         val text = sb.toString()
         val ussdMarker = text.contains("USSD", true) || text.contains("Safaricom Message", true) ||
-                text.contains("Kindly wait", true) || text.contains("MSISDN", true)
+                text.contains("Kindly wait", true) || text.contains("MSISDN", true) ||
+                text.contains("voucher", true)
         if ((dialerPkg || ussdMarker) && text.length > 3) Engine.onUssdText(text)
     }
 
@@ -40,7 +60,6 @@ class UssdAutomationService : AccessibilityService() {
         for (i in 0 until node.childCount) node.getChild(i)?.let { collect(it, sb) }
     }
 
-    /** Presses OK (or given labels) so you never touch the screen. */
     fun clickButton(vararg labels: String) {
         try {
             val root = rootInActiveWindow ?: return
@@ -60,7 +79,6 @@ class UssdAutomationService : AccessibilityService() {
         } catch (_: Exception) { }
     }
 
-    /** Types the target number into a USSD prompt and presses SEND. */
     fun respondWithNumber(number: String) {
         try {
             val root = rootInActiveWindow ?: return
