@@ -24,11 +24,9 @@ object Engine {
     private var current: PinItem? = null
     private var decided = false
     private var phase = "IDLE"
-    private var balanceThen: (() -> Unit)? = null
 
-    const val DELAY_MS = 2500L          // pause between vouchers – raise to 5000 if Safaricom ever complains
-    const val TIMEOUT_MS = 20000L
-    const val BALANCE_TIMEOUT_MS = 12000L
+    const val NEXT_DELAY_MS = 800L
+    const val TIMEOUT_MS = 10000L
 
     fun addPin(p: String) {
         if (p.length == 16 && p != "1234567890123456" && queue.none { it.pin == p }) { queue.add(PinItem(p)); ui?.invoke() }
@@ -43,26 +41,25 @@ object Engine {
     fun start() {
         running = true
         log?.invoke("▶ Started – ${queue.count { it.status == "PENDING" }} voucher(s)")
-        checkBalanceThen { next() }
+        next()
     }
 
     fun stop() {
         running = false
         handler.removeCallbacksAndMessages(null)
         current?.let { if (it.status == "LOADING") it.status = "PENDING" }
-        phase = "IDLE"; balanceThen = null
+        phase = "IDLE"
         log?.invoke("⏹ Stopped.")
         ui?.invoke()
     }
 
-    private fun checkBalanceThen(then: () -> Unit) {
-        if (!running) return
+    fun checkBalance() {
         phase = "BALANCE"
-        balanceThen = then
-        dial("*100#")
+        log?.invoke("💰 Checking balance…")
+        dial("*144#")
         handler.postDelayed({
-            if (running && phase == "BALANCE") { phase = "TOPUP"; balanceThen = null; then() }
-        }, BALANCE_TIMEOUT_MS)
+            if (phase == "BALANCE") { phase = "IDLE"; log?.invoke("💰 Balance check timed out") }
+        }, TIMEOUT_MS)
     }
 
     private fun next() {
@@ -77,14 +74,17 @@ object Engine {
         current = item; decided = false
         item.status = "LOADING"; ui?.invoke()
         log?.invoke("Dialing ••••${item.pin.takeLast(4)} …")
-        val code = if (mode == "SELF") "*141*${item.pin}#" else "*141*${item.pin}*${other0}#"
+        val code = if (mode == "SELF") "*141*${item.pin}#" else "*141*${item.pin}*${other0}*#"
         dial(code)
         handler.postDelayed({
-            if (!decided && current == item && running && phase == "TOPUP") { fail(item, "No confirmation (timeout)"); scheduleNext() }
+            if (!decided && current == item && running && phase == "TOPUP") {
+                fail(item, "No confirmation (timeout)")
+                goNext()
+            }
         }, TIMEOUT_MS)
     }
 
-    private fun scheduleNext() = handler.postDelayed({ if (running) next() }, DELAY_MS)
+    private fun goNext() = handler.postDelayed({ if (running) next() }, NEXT_DELAY_MS)
 
     private fun dial(code: String) {
         val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:" + code.replace("#", "%23")))
@@ -94,7 +94,6 @@ object Engine {
     }
 
     fun onUssdText(text: String) {
-        if (!running) return
         val t = text.lowercase()
 
         if (phase == "BALANCE") {
@@ -103,31 +102,42 @@ object Engine {
                 balance = m.groupValues[1]
                 log?.invoke("💰 Balance: Ksh $balance")
                 ui?.invoke()
-                val then = balanceThen; balanceThen = null; phase = "TOPUP"
-                handler.postDelayed({ then?.invoke() }, 800)
+                phase = "IDLE"
+                service?.clickButton("OK")
             }
             return
         }
 
-        if (decided) return
-        if (t.contains("kindly wait") || t.contains("processing")) return   // still working – wait
+        if (!running) return
+
         if (t.contains("enter the number") || t.contains("msisdn")) {
-            log?.invoke("↪ Number prompt – auto-filling $other0 and pressing SEND")
             service?.respondWithNumber(other0)
             return
         }
-        val item = current ?: return
-        if (!listOf("safaricom", "balance", "top up", "voucher", "pin", "used", "invalid", "success", "ksh", "error").any { t.contains(it) }) return
 
+        if (decided) { service?.clickButton("OK"); return }
+
+        if (t.contains("kindly wait") || t.contains("processing")) {
+            val item = current ?: return
+            decided = true
+            item.status = "SUCCESS"
+            item.note = "accepted – processing"
+            log?.invoke("✅ ••••${item.pin.takeLast(4)} – accepted (processing)")
+            ui?.invoke()
+            service?.clickButton("OK")
+            goNext()
+            return
+        }
+
+        val item = current ?: return
         when {
-            listOf("already used", "already been used", "invalid pin", "invalid voucher", "not valid", "expired", "wrong pin", "error from application")
+            listOf("been used", "already used", "invalid", "expired", "not valid", "wrong pin", "error from application", "failed")
                 .any { t.contains(it) } -> {
-                decided = true; fail(item, short(t)); scheduleNext()
+                decided = true; fail(item, short(t)); service?.clickButton("OK"); goNext()
             }
-            listOf("successfully", "topped up", "top up successful", "new balance", "your balance", "confirmed")
+            listOf("successfully", "topped up", "top up successful", "new balance", "your balance", "confirmed", "recharge")
                 .any { t.contains(it) } -> {
-                decided = true; ok(item, short(t))
-                handler.postDelayed({ if (running) checkBalanceThen { next() } }, DELAY_MS)
+                decided = true; ok(item, short(t)); service?.clickButton("OK"); goNext()
             }
         }
     }
