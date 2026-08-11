@@ -9,7 +9,14 @@ import android.os.Bundle
 import android.provider.MediaStore
 import android.provider.Settings
 import android.view.View
-import android.widget.*
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.EditText
+import android.widget.ListView
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import java.io.File
@@ -38,7 +45,8 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.btnUpload).setOnClickListener {
             val i = Intent(Intent.ACTION_GET_CONTENT).apply {
-                type = "image/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                type = "image/*"
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                 addCategory(Intent.CATEGORY_OPENABLE)
             }
             startActivityForResult(Intent.createChooser(i, "Select voucher images"), REQ_PICK)
@@ -61,7 +69,7 @@ class MainActivity : AppCompatActivity() {
         adapter = ArrayAdapter(this, R.layout.list_item, R.id.tv, mutableListOf())
         findViewById<ListView>(R.id.lvQueue).apply {
             adapter = this@MainActivity.adapter
-            setOnItemClickListener { _, pos, _, _ -> Engine.removeAt(pos) }
+            setOnItemClickListener { _, _, pos, _ -> Engine.removeAt(pos) }
         }
 
         findViewById<Button>(R.id.btnStart).setOnClickListener { startAutomation() }
@@ -75,12 +83,16 @@ class MainActivity : AppCompatActivity() {
         if (findViewById<RadioButton>(R.id.rbOther).isChecked) {
             val norm = normalize(findViewById<EditText>(R.id.etOther).text.toString())
             if (norm == null) { toast("Enter a valid target number"); return }
-            Engine.otherNumber = norm; Engine.mode = "OTHER"
-        } else Engine.mode = "SELF"
+            Engine.otherNumber = norm
+            Engine.mode = "OTHER"
+        } else {
+            Engine.mode = "SELF"
+        }
 
         if (!Engine.accessibilityOn(this)) {
             toast("One-time setup: switch ON 'Boma Load' under Accessibility, then press Start again")
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); return
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            return
         }
         Engine.start()
     }
@@ -117,7 +129,9 @@ class MainActivity : AppCompatActivity() {
             contentResolver.openInputStream(uri).use { ins ->
                 BitmapFactory.decodeStream(ins)?.let { extractFrom(shrink(it)) }
             }
-        } catch (e: Exception) { toast("Could not read image") }
+        } catch (e: Exception) {
+            toast("Could not read image")
+        }
     }
 
     private fun shrink(b: Bitmap): Bitmap {
@@ -132,8 +146,10 @@ class MainActivity : AppCompatActivity() {
         OcrExtractor.extract(b) { pins ->
             runOnUiThread {
                 pins.forEach { Engine.addPin(it) }
-                toast(if (pins.isEmpty()) "No 16-digit PIN found – take a clearer photo or add manually"
-                      else "Found ${pins.size} PIN(s)")
+                toast(
+                    if (pins.isEmpty()) "No 16-digit PIN found – take a clearer photo or add manually"
+                    else "Found ${pins.size} PIN(s)"
+                )
             }
         }
     }
