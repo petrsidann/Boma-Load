@@ -22,8 +22,8 @@ class UssdAutomationService : AccessibilityService() {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
-        if (pkg == packageName) return                                   // ignore our own app
-        if (pkg.contains("systemui") || pkg.contains("launcher")) return // ignore notification shade
+        if (pkg == packageName) return                                    // ignore our own app
+        if (pkg.contains("systemui") || pkg.contains("launcher")) return  // ignore notification shade
         val dialerPkg = pkg.contains("phone") || pkg.contains("dialer") ||
                 pkg.contains("telecom") || pkg.contains("caller")
         val root = rootInActiveWindow ?: return
@@ -44,21 +44,35 @@ class UssdAutomationService : AccessibilityService() {
     fun respondWithNumber(number: String) {
         try {
             val root = rootInActiveWindow ?: return
-            val edits = root.findAccessibilityNodeInfosByViewType("android.widget.EditText")
-            if (edits != null && edits.isNotEmpty()) {
+            val edit = findEdit(root)
+            if (edit != null) {
                 val args = Bundle()
-                args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, number)
-                edits[0].performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                args.putCharSequence(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, number)
+                edit.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
             }
             val sends = root.findAccessibilityNodeInfosByText("SEND")
             if (sends != null) {
                 for (n in sends) {
                     var c: AccessibilityNodeInfo? = n
                     while (c != null && !c.isClickable) c = c.parent
-                    if (c != null) { c.performAction(AccessibilityNodeInfo.ACTION_CLICK); break }
+                    if (c != null) {
+                        c.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        break
+                    }
                 }
             }
         } catch (_: Exception) { }
+    }
+
+    private fun findEdit(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        if (node.className?.toString() == "android.widget.EditText") return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val hit = findEdit(child)
+            if (hit != null) return hit
+        }
+        return null
     }
 
     override fun onInterrupt() {}
