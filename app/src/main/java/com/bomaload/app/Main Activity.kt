@@ -76,6 +76,7 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.btnStart).setOnClickListener { startAutomation() }
         findViewById<Button>(R.id.btnStop).setOnClickListener { Engine.stop() }
+        findViewById<Button>(R.id.btnBalance).setOnClickListener { Engine.checkBalance() }
         findViewById<Button>(R.id.btnUpdate).setOnClickListener { checkUpdate() }
         renderQueue()
     }
@@ -182,7 +183,7 @@ class MainActivity : AppCompatActivity() {
         val done = Engine.queue.count { it.status == "SUCCESS" || it.status == "FAILED" }
         findViewById<TextView>(R.id.tvProgress).text = "$done of ${Engine.queue.size} processed"
         findViewById<TextView>(R.id.tvBalance).text =
-            if (Engine.balance.isEmpty()) "Balance: checking…" else "💰 Balance: Ksh ${Engine.balance}"
+            if (Engine.balance.isEmpty()) "Balance: tap CHECK BALANCE" else "💰 Balance: Ksh ${Engine.balance}"
     }
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
