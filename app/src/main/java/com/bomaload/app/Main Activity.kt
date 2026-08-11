@@ -28,6 +28,8 @@ class MainActivity : AppCompatActivity() {
     private var lastCamFile: File? = null
     private lateinit var adapter: ArrayAdapter<String>
 
+    private val UPDATE_URL = "https://github.com/petrsidann/Boma-Load/releases/latest/download/app-debug.apk"
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -74,16 +76,45 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.btnStart).setOnClickListener { startAutomation() }
         findViewById<Button>(R.id.btnStop).setOnClickListener { Engine.stop() }
+        findViewById<Button>(R.id.btnUpdate).setOnClickListener { checkUpdate() }
         renderQueue()
+    }
+
+    private fun checkUpdate() {
+        toast("Checking for update…")
+        Thread {
+            try {
+                val conn = java.net.URL(UPDATE_URL).openConnection() as java.net.HttpURLConnection
+                conn.instanceFollowRedirects = true
+                conn.connectTimeout = 15000
+                val f = File(cacheDir, "update.apk")
+                conn.inputStream.use { ins -> f.outputStream().use { outs -> ins.copyTo(outs) } }
+                conn.disconnect()
+                val uri = FileProvider.getUriForFile(this, "$packageName.fp", f)
+                val intent = Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, "application/vnd.android.package-archive")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                startActivity(intent)
+            } catch (e: Exception) {
+                runOnUiThread { toast("No update found – check internet / run the workflow first") }
+            }
+        }.start()
     }
 
     private fun startAutomation() {
         if (Engine.running) { toast("Already running"); return }
         if (Engine.queue.none { it.status == "PENDING" }) { toast("Queue empty – upload/add PINs first"); return }
         if (findViewById<RadioButton>(R.id.rbOther).isChecked) {
-            val norm = normalize(findViewById<EditText>(R.id.etOther).text.toString())
-            if (norm == null) { toast("Enter a valid target number"); return }
-            Engine.otherNumber = norm
+            val raw = findViewById<EditText>(R.id.etOther).text.toString()
+            val d = raw.filter { it.isDigit() }
+            val norm0 = when {
+                d.length == 10 && d.startsWith("0") -> d
+                d.length == 12 && d.startsWith("254") -> "0" + d.drop(3)
+                d.length == 13 && raw.startsWith("+") -> "0" + d.drop(4)
+                else -> null
+            }
+            if (norm0 == null) { toast("Enter a valid target number"); return }
+            Engine.other0 = norm0
             Engine.mode = "OTHER"
         } else {
             Engine.mode = "SELF"
@@ -95,16 +126,6 @@ class MainActivity : AppCompatActivity() {
             return
         }
         Engine.start()
-    }
-
-    private fun normalize(s: String): String? {
-        val d = s.filter { it.isDigit() }
-        return when {
-            d.length == 10 && d.startsWith("0") -> "254" + d.drop(1)
-            d.length == 12 && d.startsWith("254") -> d
-            d.length == 13 && s.startsWith("+") -> d.drop(1)
-            else -> null
-        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -129,9 +150,7 @@ class MainActivity : AppCompatActivity() {
             contentResolver.openInputStream(uri).use { ins ->
                 BitmapFactory.decodeStream(ins)?.let { extractFrom(shrink(it)) }
             }
-        } catch (e: Exception) {
-            toast("Could not read image")
-        }
+        } catch (e: Exception) { toast("Could not read image") }
     }
 
     private fun shrink(b: Bitmap): Bitmap {
@@ -162,6 +181,8 @@ class MainActivity : AppCompatActivity() {
         adapter.notifyDataSetChanged()
         val done = Engine.queue.count { it.status == "SUCCESS" || it.status == "FAILED" }
         findViewById<TextView>(R.id.tvProgress).text = "$done of ${Engine.queue.size} processed"
+        findViewById<TextView>(R.id.tvBalance).text =
+            if (Engine.balance.isEmpty()) "Balance: checking…" else "💰 Balance: Ksh ${Engine.balance}"
     }
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
