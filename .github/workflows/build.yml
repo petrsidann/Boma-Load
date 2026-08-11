@@ -20,7 +20,7 @@ jobs:
       - name: Build debug APK
         run: $HOME/gradle-8.3/bin/gradle assembleDebug --no-daemon
       - name: Publish latest release
-        uses: softprops/action-ghrelease@v2
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Boma Load latest
