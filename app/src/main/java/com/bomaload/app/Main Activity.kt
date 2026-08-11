@@ -5,10 +5,12 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.provider.Settings
 import android.view.View
+import android.view.WindowManager
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
@@ -33,17 +35,24 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         Engine.appCtx = applicationContext
         Engine.ui = { runOnUiThread { renderQueue() } }
         Engine.log = { m -> runOnUiThread { findViewById<TextView>(R.id.tvLog).append(m + "\n") } }
 
-        requestPermissions(arrayOf(Manifest.permission.CALL_PHONE), 9)
+        val perms = mutableListOf(Manifest.permission.CALL_PHONE)
+        if (Build.VERSION.SDK_INT >= 33) perms.add(Manifest.permission.POST_NOTIFICATIONS)
+        requestPermissions(perms.toTypedArray(), 9)
 
         findViewById<RadioGroup>(R.id.rgTarget).setOnCheckedChangeListener { _, id ->
             findViewById<EditText>(R.id.etOther).visibility =
                 if (id == R.id.rbOther) View.VISIBLE else View.GONE
         }
+
+        // Built-in saved numbers – tap to select as target
+        findViewById<Button>(R.id.bn1).setOnClickListener { pickNumber("0111363967") }
+        findViewById<Button>(R.id.bn2).setOnClickListener { pickNumber("0115108066") }
 
         findViewById<Button>(R.id.btnUpload).setOnClickListener {
             val i = Intent(Intent.ACTION_GET_CONTENT).apply {
@@ -79,6 +88,12 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnBalance).setOnClickListener { Engine.checkBalance() }
         findViewById<Button>(R.id.btnUpdate).setOnClickListener { checkUpdate() }
         renderQueue()
+    }
+
+    private fun pickNumber(num: String) {
+        findViewById<RadioButton>(R.id.rbOther).isChecked = true
+        findViewById<EditText>(R.id.etOther).setText(num)
+        toast("Target: $num")
     }
 
     private fun checkUpdate() {
@@ -122,7 +137,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (!Engine.accessibilityOn(this)) {
-            toast("One-time setup: switch ON 'Boma Load' under Accessibility, then press Start again")
+            toast("Switch ON 'Boma Load' under Accessibility, then press Start")
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            return
+        }
+        if (Engine.service == null) {
+            toast("Reader asleep – toggle Boma Load OFF then ON in Accessibility, then Start")
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             return
         }
