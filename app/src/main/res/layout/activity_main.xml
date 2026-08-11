@@ -8,6 +8,9 @@
     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:text="Bulk voucher top-up — My Number or Other Number"
         android:textColor="#9E9E9E" android:textSize="12sp"/>
+    <TextView android:id="@+id/tvBalance" android:layout_width="wrap_content"
+        android:layout_height="wrap_content" android:text="Balance: checking…"
+        android:textColor="#FFFFFF" android:textSize="14sp" android:layout_marginTop="4dp"/>
 
     <RadioGroup android:id="@+id/rgTarget" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="12dp">
@@ -62,6 +65,10 @@
             android:layout_height="wrap_content" android:text="STOP"
             android:backgroundTint="#B71C1C" android:textColor="#FFFFFF"/>
     </LinearLayout>
+
+    <Button android:id="@+id/btnUpdate" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:text="CHECK FOR UPDATES"
+        android:backgroundTint="#333333" android:textColor="#FFFFFF"/>
 
     <ScrollView android:layout_width="match_parent" android:layout_height="150dp" android:layout_marginTop="8dp">
         <TextView android:id="@+id/tvLog" android:layout_width="match_parent"
