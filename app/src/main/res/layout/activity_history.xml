@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="16dp" android:background="#101010">
+
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="History" android:textColor="#4CAF50" android:textSize="24sp" android:textStyle="bold"/>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:layout_marginTop="8dp">
+        <Button android:id="@+id/bAll" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="ALL"
+            android:backgroundTint="#333333" android:textColor="#FFFFFF"/>
+        <Button android:id="@+id/bOk" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="SUCCESS"
+            android:backgroundTint="#1B3A1B" android:textColor="#4CAF50"/>
+        <Button android:id="@+id/bFail" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="FAILED"
+            android:backgroundTint="#3A1B1B" android:textColor="#FF5252"/>
+    </LinearLayout>
+
+    <ListView android:id="@+id/lvHistory" android:layout_width="match_parent"
+        android:layout_height="0dp" android:layout_weight="1" android:divider="@null"
+        android:background="#1A1A1A" android:layout_marginTop="8dp"/>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button android:id="@+id/bShare" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="SHARE"
+            android:backgroundTint="#333333" android:textColor="#FFFFFF"/>
+        <Button android:id="@+id/bRetry" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="RETRY FAILED"
+            android:backgroundTint="#333333" android:textColor="#FFFFFF"/>
+        <Button android:id="@+id/bClear" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="CLEAR"
+            android:backgroundTint="#3A1B1B" android:textColor="#FF5252"/>
+    </LinearLayout>
+    <Button android:id="@+id/bBack" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:text="BACK"
+        android:backgroundTint="#4CAF50" android:textColor="#FFFFFF"/>
+</LinearLayout>
