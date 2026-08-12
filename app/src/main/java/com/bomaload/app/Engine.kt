@@ -117,7 +117,7 @@ object Engine {
         if (running) { log?.invoke("💰 Wait – automation running"); return }
         phase = "BALANCE"
         log?.invoke("💰 Checking balance…")
-        dial("*100#".replace("*100#", "*144#"))
+        dial("*144#")
         handler.postDelayed({ if (phase == "BALANCE") { phase = "IDLE"; log?.invoke("💰 No balance response") } }, TIMEOUT_MS)
     }
 
@@ -132,7 +132,7 @@ object Engine {
         val item = queue.firstOrNull { it.status == "PENDING" }
         if (item == null) { complete(); return }
         val t = targets.filter { it.enabled }
-            .minWithOrNull(compareBy<Target> { it.today }.then { it.nextAt })
+            .minWithOrNull(compareBy<Target> { it.today }.thenBy { it.nextAt })
         if (t == null) { complete(); return }
         val wait = if (turbo) 0L else maxOf(0L, t.nextAt - System.currentTimeMillis())
         if (wait > 0) log?.invoke("⏳ pacing ${t.label} – ${wait / 1000}s")
