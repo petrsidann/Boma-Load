@@ -1,84 +1,145 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:padding="16dp" android:background="#101010">
+    android:orientation="vertical" android:padding="14dp" android:background="#0B0C0D">
 
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="Boma Load" android:textColor="#4CAF50" android:textSize="26sp" android:textStyle="bold"/>
-    <TextView android:id="@+id/tvBalance" android:layout_width="wrap_content"
-        android:layout_height="wrap_content" android:text="Balance: tap CHECK BALANCE"
-        android:textColor="#FFFFFF" android:textSize="14sp"/>
-
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="TARGETS (tick to include – loads rotate equally)"
-        android:textColor="#4CAF50" android:textStyle="bold" android:textSize="13sp" android:layout_marginTop="8dp"/>
-    <LinearLayout android:id="@+id/llTargets" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:orientation="vertical"/>
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal">
-        <EditText android:id="@+id/etNewTarget" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:hint="Add another target number"
-            android:inputType="phone" android:textColor="#FFFFFF" android:textColorHint="#777777"/>
-        <Button android:id="@+id/btnAddTarget" android:layout_width="wrap_content"
-            android:layout_height="wrap_content" android:text="ADD"/>
+        android:orientation="vertical" android:background="@drawable/header_bg" android:padding="16dp">
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="⚡ BOMA LOAD" android:textColor="#4CAF50" android:textSize="26sp" android:textStyle="bold"/>
+        <TextView android:id="@+id/tvBalance" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="Balance: tap CHECK BALANCE"
+            android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold" android:layout_marginTop="4dp"/>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginTop="10dp">
+            <TextView android:id="@+id/tvBReader" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="READER 🟢" android:textSize="11sp"
+                android:textColor="#9E9E9E" android:background="@drawable/badge_bg" android:padding="6dp"
+                android:gravity="center" android:layout_marginEnd="4dp"/>
+            <TextView android:id="@+id/tvBMode" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="🛡 SAFE" android:textSize="11sp"
+                android:textColor="#9E9E9E" android:background="@drawable/badge_bg" android:padding="6dp"
+                android:gravity="center" android:layout_marginEnd="4dp"/>
+            <TextView android:id="@+id/tvBToday" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="TODAY: 0" android:textSize="11sp"
+                android:textColor="#9E9E9E" android:background="@drawable/badge_bg" android:padding="6dp"
+                android:gravity="center"/>
+        </LinearLayout>
     </LinearLayout>
 
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:layout_marginTop="8dp">
-        <Button android:id="@+id/btnUpload" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:text="UPLOAD IMAGES"/>
-        <Button android:id="@+id/btnScan" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:text="SCAN CARD"/>
-    </LinearLayout>
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal">
-        <EditText android:id="@+id/etManualPin" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:hint="Or type a 16-digit PIN"
-            android:inputType="number" android:textColor="#FFFFFF" android:textColorHint="#777777"/>
-        <Button android:id="@+id/btnAddPin" android:layout_width="wrap_content"
-            android:layout_height="wrap_content" android:text="ADD"/>
-    </LinearLayout>
-
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="QUEUE (tap=remove / review=keep)"
-        android:textColor="#4CAF50" android:textStyle="bold" android:textSize="13sp" android:layout_marginTop="8dp"/>
-    <ListView android:id="@+id/lvQueue" android:layout_width="match_parent"
-        android:layout_height="0dp" android:layout_weight="1" android:divider="@null" android:background="#1A1A1A"/>
-
-    <TextView android:id="@+id/tvProgress" android:layout_width="wrap_content"
-        android:layout_height="wrap_content" android:text="0 of 0 processed"
-        android:textColor="#FFFFFF" android:layout_marginTop="8dp"/>
-
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal">
-        <Button android:id="@+id/btnStart" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:text="START AUTOMATION"
-            android:backgroundTint="#4CAF50" android:textColor="#FFFFFF"/>
-        <Button android:id="@+id/btnStop" android:layout_width="0dp" android:layout_weight="0.4"
-            android:layout_height="wrap_content" android:text="STOP"
-            android:backgroundTint="#B71C1C" android:textColor="#FFFFFF"/>
-    </LinearLayout>
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal">
-        <Button android:id="@+id/btnMode" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:text="MODE: SAFE 🛡"
-            android:backgroundTint="#333333" android:textColor="#FFFFFF"/>
-        <Button android:id="@+id/btnHistory" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:text="HISTORY"
-            android:backgroundTint="#333333" android:textColor="#FFFFFF"/>
-    </LinearLayout>
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal">
-        <Button android:id="@+id/btnBalance" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:text="CHECK BALANCE"
-            android:backgroundTint="#333333" android:textColor="#FFFFFF"/>
-        <Button android:id="@+id/btnUpdate" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:text="CHECK FOR UPDATES"
-            android:backgroundTint="#333333" android:textColor="#FFFFFF"/>
+        android:orientation="vertical" android:background="@drawable/card_bg"
+        android:padding="12dp" android:layout_marginTop="10dp">
+        <TextView android:id="@+id/hTargets" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="🎯 TARGETS — tap to collapse ▾" android:textColor="#4CAF50" android:textStyle="bold" android:textSize="13sp"/>
+        <LinearLayout android:id="@+id/cTargets" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <LinearLayout android:id="@+id/llTargets" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical"/>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <EditText android:id="@+id/etNewTarget" android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content" android:hint="Add another target number"
+                    android:inputType="phone" android:textColor="#FFFFFF" android:textColorHint="#666666" android:textSize="13sp"/>
+                <Button android:id="@+id/btnAddTarget" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:text="ADD" android:backgroundTint="#24282B" android:textColor="#4CAF50"/>
+            </LinearLayout>
+        </LinearLayout>
     </LinearLayout>
 
-    <ScrollView android:layout_width="match_parent" android:layout_height="140dp" android:layout_marginTop="8dp">
-        <TextView android:id="@+id/tvLog" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:textSize="11sp" android:textColor="#888888"/>
-    </ScrollView>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:background="@drawable/card_bg"
+        android:padding="12dp" android:layout_marginTop="10dp">
+        <TextView android:id="@+id/hLoad" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="📥 LOAD VOUCHERS — tap to collapse ▾" android:textColor="#4CAF50" android:textStyle="bold" android:textSize="13sp"/>
+        <LinearLayout android:id="@+id/cLoad" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <Button android:id="@+id/btnUpload" android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content" android:text="UPLOAD IMAGES"
+                    android:backgroundTint="#24282B" android:textColor="#FFFFFF" android:textSize="12sp"/>
+                <Button android:id="@+id/btnScan" android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content" android:text="SCAN CARD"
+                    android:backgroundTint="#24282B" android:textColor="#FFFFFF" android:textSize="12sp"/>
+            </LinearLayout>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <EditText android:id="@+id/etManualPin" android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content" android:hint="Type a 16-digit PIN"
+                    android:inputType="number" android:textColor="#FFFFFF" android:textColorHint="#666666" android:textSize="13sp"/>
+                <Button android:id="@+id/btnAddPin" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:text="ADD" android:backgroundTint="#24282B" android:textColor="#4CAF50"/>
+            </LinearLayout>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:gravity="center_vertical">
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="PINs per image:" android:textColor="#9E9E9E" android:textSize="12sp"/>
+                <EditText android:id="@+id/etExpected" android:layout_width="70dp"
+                    android:layout_height="wrap_content" android:text="10" android:inputType="number"
+                    android:textColor="#FFFFFF" android:textSize="13sp"/>
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:orientation="vertical" android:background="@drawable/card_bg"
+        android:padding="12dp" android:layout_marginTop="10dp">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text=" QUEUE (tap=remove / review=keep)" android:textColor="#4CAF50" android:textStyle="bold" android:textSize="13sp"/>
+        <ListView android:id="@+id/lvQueue" android:layout_width="match_parent"
+            android:layout_height="0dp" android:layout_weight="1" android:divider="@null" android:layout_marginTop="4dp"/>
+        <ProgressBar android:id="@+id/pb" style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:max="100" android:progress="0" android:progressTint="#4CAF50"
+            android:progressBackgroundTint="#24282B" android:layout_marginTop="6dp"/>
+        <TextView android:id="@+id/tvProgress" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="0 of 0 processed"
+            android:textColor="#FFFFFF" android:textSize="12sp"/>
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:background="@drawable/card_bg"
+        android:padding="12dp" android:layout_marginTop="10dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button android:id="@+id/btnStart" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="▶ START AUTOMATION"
+                android:backgroundTint="#4CAF50" android:textColor="#FFFFFF" android:textSize="13sp"/>
+            <Button android:id="@+id/btnStop" android:layout_width="0dp" android:layout_weight="0.35"
+                android:layout_height="wrap_content" android:text="STOP"
+                android:backgroundTint="#B71C1C" android:textColor="#FFFFFF" android:textSize="13sp"/>
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button android:id="@+id/btnMode" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="MODE: SAFE 🛡"
+                android:backgroundTint="#24282B" android:textColor="#FFFFFF" android:textSize="12sp"/>
+            <Button android:id="@+id/btnHistory" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="HISTORY"
+                android:backgroundTint="#24282B" android:textColor="#FFFFFF" android:textSize="12sp"/>
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button android:id="@+id/btnBalance" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="CHECK BALANCE"
+                android:backgroundTint="#24282B" android:textColor="#FFFFFF" android:textSize="12sp"/>
+            <Button android:id="@+id/btnUpdate" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="CHECK FOR UPDATES"
+                android:backgroundTint="#24282B" android:textColor="#FFFFFF" android:textSize="12sp"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:background="@drawable/card_bg"
+        android:padding="12dp" android:layout_marginTop="10dp">
+        <TextView android:id="@+id/hTerm" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:text="🖥 TERMINAL — tap to collapse ▾" android:textColor="#4CAF50" android:textStyle="bold" android:textSize="13sp"/>
+        <ScrollView android:id="@+id/cTerm" android:layout_width="match_parent"
+            android:layout_height="110dp" android:layout_marginTop="4dp" android:background="#101214">
+            <TextView android:id="@+id/tvLog" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:textSize="10sp" android:textColor="#7CFC9A"
+                android:fontFamily="monospace" android:padding="6dp"/>
+        </ScrollView>
+    </LinearLayout>
 </LinearLayout>
