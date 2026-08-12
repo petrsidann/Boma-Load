@@ -26,8 +26,9 @@ object Engine {
     var log: ((String) -> Unit)? = null
     var balance = ""
 
-    const val SAFE_GAP_MS = 45_000L
+    const val SAFE_GAP_MS = 2500L
     const val TURBO_GAP_MS = 250L
+    const val COOLDOWN_MS = 10_000L
     const val TIMEOUT_MS = 8000L
 
     private val handler = Handler(Looper.getMainLooper())
@@ -35,6 +36,8 @@ object Engine {
     private var decided = false
     private var phase = "IDLE"
     private var consecFails = 0
+    private var successRun = 0
+    private var cooldownUntil = 0L
     private val vault = mutableSetOf<String>()
     private val history = mutableListOf<String>()
 
@@ -87,7 +90,6 @@ object Engine {
     fun promoteReview(i: Int) {
         if (i in review.indices) { queue.add(PinItem(review.removeAt(i))); save(); ui?.invoke() }
     }
-
     fun addTarget(num0: String) {
         if (targets.none { it.number0 == num0 }) { targets.add(Target(num0, num0, true)); save(); ui?.invoke() }
     }
@@ -99,7 +101,7 @@ object Engine {
 
     fun start() {
         if (targets.none { it.enabled }) { log?.invoke("🛑 Enable at least one target"); return }
-        running = true; consecFails = 0
+        running = true; consecFails = 0; successRun = 0; cooldownUntil = 0L
         log?.invoke("▶ Started – ${queue.count { it.status == "PENDING" }} voucher(s), mode ${if (turbo) "TURBO" else "SAFE"}")
         next()
     }
@@ -118,7 +120,13 @@ object Engine {
         phase = "BALANCE"
         log?.invoke("💰 Checking balance…")
         dial("*144#")
-        handler.postDelayed({ if (phase == "BALANCE") { phase = "IDLE"; log?.invoke("💰 No balance response") } }, TIMEOUT_MS)
+        handler.postDelayed({
+            if (phase == "BALANCE") {
+                phase = "IDLE"
+                log?.invoke("💰 No balance response")
+                service?.clickButton("OK")
+            }
+        }, TIMEOUT_MS)
     }
 
     private fun complete() {
@@ -134,8 +142,11 @@ object Engine {
         val t = targets.filter { it.enabled }
             .minWithOrNull(compareBy<Target> { it.today }.thenBy { it.nextAt })
         if (t == null) { complete(); return }
-        val wait = if (turbo) 0L else maxOf(0L, t.nextAt - System.currentTimeMillis())
-        if (wait > 0) log?.invoke("⏳ pacing ${t.label} – ${wait / 1000}s")
+        val now = System.currentTimeMillis()
+        val pace = if (turbo) 0L else maxOf(0L, t.nextAt - now)
+        val cool = if (turbo) 0L else maxOf(0L, cooldownUntil - now)
+        val wait = maxOf(pace, cool)
+        if (cool > 0) log?.invoke("❄️ cool-down – ${cool / 1000}s")
         handler.postDelayed({ if (running) send(item, t) }, wait)
     }
 
@@ -156,7 +167,7 @@ object Engine {
         }, TIMEOUT_MS)
     }
 
-    private fun goNext() = handler.postDelayed({ if (running) next() }, if (turbo) TURBO_GAP_MS else 1000L)
+    private fun goNext() = handler.postDelayed({ if (running) next() }, if (turbo) TURBO_GAP_MS else 800L)
 
     private fun dial(code: String) {
         val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:" + code.replace("#", "%23")))
@@ -171,8 +182,8 @@ object Engine {
         val t = text.lowercase()
 
         if (phase == "BALANCE") {
-            val m = Regex("ksh[\\s.:]*([0-9][0-9,.]*)").find(t)
-                ?: Regex("balance[^0-9]{0,10}([0-9][0-9,.]*)").find(t)
+            val m = Regex("bal[^0-9]{0,6}([0-9][0-9,.]{2,})").find(t)
+                ?: Regex("([0-9][0-9,.]{2,})\\s*ksh").find(t)
             if (m != null) {
                 balance = m.groupValues[1]
                 log?.invoke("💰 Balance: Ksh $balance")
@@ -230,6 +241,11 @@ object Engine {
         vault.add(item.pin)
         history.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|SUCCESS|${m.replace("|", "/")}")
         consecFails = 0
+        successRun++
+        if (!turbo && successRun % 10 == 0) {
+            cooldownUntil = System.currentTimeMillis() + COOLDOWN_MS
+            log?.invoke("❄️ 10 loaded – cool-down 10s")
+        }
         log?.invoke("✅ ••••${item.pin.takeLast(4)} → ${item.target} – $m")
         save(); ui?.invoke()
     }
@@ -240,7 +256,7 @@ object Engine {
         consecFails++
         log?.invoke("❌ ••••${item.pin.takeLast(4)} → ${item.target} – $m")
         if (consecFails >= 3) {
-            log?.invoke("🛑 3 fails in a row – auto-stopped. Line may be flagged; rest it.")
+            log?.invoke("🛑 3 fails in a row – auto-stopped. Rest that line.")
             stop()
         }
         save(); ui?.invoke()
