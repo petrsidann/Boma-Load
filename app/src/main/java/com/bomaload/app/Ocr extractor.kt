@@ -1,6 +1,10 @@
 package com.bomaload.app
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
@@ -13,11 +17,67 @@ object OcrExtractor {
 
     data class Result(val pins: List<String>, val review: List<String>, val expired: Boolean)
 
-    fun extract(bitmap: Bitmap, onDone: (Result) -> Unit) {
-        recognizer.process(InputImage.fromBitmap(bitmap, 0))
-            .addOnSuccessListener { onDone(parse(it.text)) }
-            .addOnFailureListener { onDone(Result(emptyList(), emptyList(), false)) }
+    /** Runs up to 5 enhanced OCR passes until `expected` pins are found. */
+    fun extract(bitmap: Bitmap, expected: Int, onDone: (Result) -> Unit) {
+        val b = base(bitmap)
+        val passes = listOf(
+            b,
+            contrast(scale(b, 2f)),
+            scale(crop(b, true), 2f),
+            scale(crop(b, false), 2f),
+            invert(b)
+        )
+        val pins = LinkedHashSet<String>()
+        val review = LinkedHashSet<String>()
+        var expired = false
+
+        fun nextPass(i: Int) {
+            if (i >= passes.size || pins.size >= expected) {
+                onDone(Result(pins.toList(), review.toList(), expired)); return
+            }
+            recognizer.process(InputImage.fromBitmap(passes[i], 0))
+                .addOnSuccessListener { res ->
+                    val r = parse(res.text)
+                    pins.addAll(r.pins); review.addAll(r.review); expired = expired || r.expired
+                    nextPass(i + 1)
+                }
+                .addOnFailureListener { nextPass(i + 1) }
+        }
+        nextPass(0)
     }
+
+    private fun base(b: Bitmap): Bitmap =
+        if (b.width < 1600) scale(b, 1600f / b.width) else b
+
+    private fun scale(b: Bitmap, f: Float): Bitmap =
+        Bitmap.createScaledBitmap(b, (b.width * f).toInt(), (b.height * f).toInt(), true)
+
+    private fun crop(b: Bitmap, top: Boolean): Bitmap {
+        val h = b.height / 2
+        return if (top) Bitmap.createBitmap(b, 0, 0, b.width, h)
+        else Bitmap.createBitmap(b, 0, h, b.width, b.height - h)
+    }
+
+    private fun filtered(b: Bitmap, matrix: ColorMatrix): Bitmap {
+        val out = Bitmap.createBitmap(b.width, b.height, Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        val p = Paint()
+        p.colorFilter = ColorMatrixColorFilter(matrix)
+        c.drawBitmap(b, 0f, 0f, p)
+        return out
+    }
+
+    private fun contrast(b: Bitmap): Bitmap = filtered(b, ColorMatrix(floatArrayOf(
+        1.6f, 0f, 0f, 0f, -70f,
+        0f, 1.6f, 0f, 0f, -70f,
+        0f, 0f, 1.6f, 0f, -70f,
+        0f, 0f, 0f, 1f, 0f)))
+
+    private fun invert(b: Bitmap): Bitmap = filtered(b, ColorMatrix(floatArrayOf(
+        -1f, 0f, 0f, 0f, 255f,
+        0f, -1f, 0f, 0f, 255f,
+        0f, 0f, -1f, 0f, 255f,
+        0f, 0f, 0f, 1f, 0f)))
 
     private fun deconfuse(s: String) = s.map { CONF[it.uppercaseChar()] ?: it }.joinToString("")
 
