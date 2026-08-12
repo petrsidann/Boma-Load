@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.provider.Settings
+import android.view.View
 import android.view.WindowManager
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -16,6 +17,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ListView
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -43,6 +45,10 @@ class MainActivity : AppCompatActivity() {
         val perms = mutableListOf(Manifest.permission.CALL_PHONE)
         if (Build.VERSION.SDK_INT >= 33) perms.add(Manifest.permission.POST_NOTIFICATIONS)
         requestPermissions(perms.toTypedArray(), 9)
+
+        bindCollapse(R.id.hTargets, R.id.cTargets)
+        bindCollapse(R.id.hLoad, R.id.cLoad)
+        bindCollapse(R.id.hTerm, R.id.cTerm)
 
         findViewById<Button>(R.id.btnUpload).setOnClickListener {
             val i = Intent(Intent.ACTION_GET_CONTENT).apply {
@@ -76,7 +82,7 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btnMode).setOnClickListener {
             Engine.turbo = !Engine.turbo; Engine.save(); render()
-            toast(if (Engine.turbo) "⚡ TURBO – no pacing, your risk" else "🛡 SAFE – 45s per line")
+            toast(if (Engine.turbo) "⚡ TURBO – full speed, your risk" else "🛡 SAFE – 2.5s gap + 10s cool-down per 10")
         }
         findViewById<Button>(R.id.btnHistory).setOnClickListener { startActivity(Intent(this, HistoryActivity::class.java)) }
         findViewById<Button>(R.id.btnStart).setOnClickListener { startAutomation() }
@@ -93,6 +99,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
         render()
+    }
+
+    private fun bindCollapse(header: Int, content: Int) {
+        findViewById<TextView>(header).setOnClickListener {
+            val v = findViewById<View>(content)
+            v.visibility = if (v.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
     }
 
     private fun startAutomation() {
@@ -149,27 +162,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun shrink(b: Bitmap): Bitmap {
-        val max = 1400
+        val max = 2000
         if (maxOf(b.width, b.height) <= max) return b
         val s = max.toFloat() / maxOf(b.width, b.height)
         return Bitmap.createScaledBitmap(b, (b.width * s).toInt(), (b.height * s).toInt(), true)
     }
 
     private fun extractFrom(b: Bitmap) {
-        toast("Reading PINs…")
-        OcrExtractor.extract(b) { r ->
+        toast("🧠 AI reading PINs (multi-pass)…")
+        val expected = findViewById<EditText>(R.id.etExpected).text.toString().toIntOrNull() ?: 10
+        OcrExtractor.extract(b, expected) { r ->
             runOnUiThread {
                 val c = Engine.addPins(r.pins)
                 r.review.forEach { rv -> if (!Engine.review.contains(rv)) Engine.review.add(rv) }
-                Engine.log?.invoke("📷 Image → ${c[0]} new, ${c[1]} already-used skipped, ${r.review.size} in review")
-                if (r.expired) toast("⚠ EXPIRED CARD detected in that image!")
-                toast("Image: ${c[0]} new PIN(s)${if (r.review.isNotEmpty()) ", ${r.review.size} to REVIEW" else ""}")
+                Engine.log?.invoke("📷 Image → ${c[0]} new, ${c[1]} used-skipped, ${r.review.size} review")
+                if (r.expired) toast("⚠ EXPIRED CARD detected!")
+                if (c[0] < expected) toast("⚠ ${c[0]}/$expected found – check REVIEW or rescan that photo")
+                else toast("✅ ${c[0]}/$expected PINs captured")
             }
         }
     }
 
     private fun render() {
-        // targets
         val ll = findViewById<LinearLayout>(R.id.llTargets)
         ll.removeAllViews()
         Engine.targets.forEach { t ->
@@ -183,27 +197,33 @@ class MainActivity : AppCompatActivity() {
             row.addView(cb)
             ll.addView(row)
         }
-        // queue + review
+
         adapter.clear()
         Engine.queue.forEachIndexed { i, p ->
             adapter.add("${i + 1}. •••• ${p.pin.takeLast(4)} → ${if (p.target.isEmpty()) "–" else p.target} [${p.status}] ${p.note}")
         }
-        Engine.review.forEachIndexed { i, rv ->
-            adapter.add("⚠ REVIEW ${rv} (tap=keep, tap again=drop)")
-        }
+        Engine.review.forEach { rv -> adapter.add("⚠ REVIEW $rv (tap=keep, again=drop)") }
         adapter.notifyDataSetChanged()
+
+        val total = Engine.queue.size
         val done = Engine.queue.count { it.status == "SUCCESS" || it.status == "FAILED" }
         val pend = Engine.queue.count { it.status == "PENDING" }
+        findViewById<ProgressBar>(R.id.pb).progress = if (total > 0) done * 100 / total else 0
         val act = maxOf(1, Engine.targets.count { it.enabled })
-        val eta = if (Engine.running && pend > 0)
-            (pend * ((if (Engine.turbo) 3000L else Engine.SAFE_GAP_MS / act + 2000L)) / 1000) else 0
+        val perPin = if (Engine.turbo) 3L else 2500L / act + 2L
+        val eta = if (Engine.running && pend > 0) pend * perPin else 0
         findViewById<TextView>(R.id.tvProgress).text =
-            "$done of ${Engine.queue.size} processed" + if (eta > 0) " • ~${eta}s left" else ""
+            "$done of $total processed" + if (eta > 0) " • ~${eta}s left" else ""
+
         findViewById<TextView>(R.id.tvBalance).text =
-            if (Engine.balance.isEmpty()) "Balance: tap CHECK BALANCE" else "💰 Balance: Ksh ${Engine.balance}"
+            if (Engine.balance.isEmpty()) "Balance: tap CHECK BALANCE" else "💰 Ksh ${Engine.balance}"
+        findViewById<TextView>(R.id.tvBReader).text =
+            if (Engine.service != null) "READER 🟢" else "READER 🔴"
+        findViewById<TextView>(R.id.tvBMode).text = if (Engine.turbo) "⚡ TURBO" else "🛡 SAFE"
+        findViewById<TextView>(R.id.tvBToday).text = "TODAY: ${Engine.targets.sumOf { it.today }}"
         findViewById<Button>(R.id.btnMode).text =
             if (Engine.turbo) "MODE: TURBO ⚡ (risky)" else "MODE: SAFE 🛡"
     }
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
-                      }
+}
