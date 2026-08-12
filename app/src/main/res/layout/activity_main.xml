@@ -5,46 +5,31 @@
 
     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:text="Boma Load" android:textColor="#4CAF50" android:textSize="26sp" android:textStyle="bold"/>
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="Bulk voucher top-up — My Number or Other Number"
-        android:textColor="#9E9E9E" android:textSize="12sp"/>
     <TextView android:id="@+id/tvBalance" android:layout_width="wrap_content"
         android:layout_height="wrap_content" android:text="Balance: tap CHECK BALANCE"
-        android:textColor="#FFFFFF" android:textSize="14sp" android:layout_marginTop="4dp"/>
+        android:textColor="#FFFFFF" android:textSize="14sp"/>
 
-    <RadioGroup android:id="@+id/rgTarget" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="12dp">
-        <RadioButton android:id="@+id/rbMy" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:text="My Number"
-            android:textColor="#FFFFFF" android:checked="true" android:buttonTint="#4CAF50"/>
-        <RadioButton android:id="@+id/rbOther" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:text="Other Number"
-            android:textColor="#FFFFFF" android:buttonTint="#4CAF50"/>
-    </RadioGroup>
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="TARGETS (tick to include – loads rotate equally)"
+        android:textColor="#4CAF50" android:textStyle="bold" android:textSize="13sp" android:layout_marginTop="8dp"/>
+    <LinearLayout android:id="@+id/llTargets" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:orientation="vertical"/>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <EditText android:id="@+id/etNewTarget" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:hint="Add another target number"
+            android:inputType="phone" android:textColor="#FFFFFF" android:textColorHint="#777777"/>
+        <Button android:id="@+id/btnAddTarget" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:text="ADD"/>
+    </LinearLayout>
 
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="horizontal" android:layout_marginTop="8dp">
-        <Button android:id="@+id/bn1" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:text="0111363967"
-            android:backgroundTint="#1B3A1B" android:textColor="#4CAF50" android:textSize="12sp"/>
-        <Button android:id="@+id/bn2" android:layout_width="0dp" android:layout_weight="1"
-            android:layout_height="wrap_content" android:text="0115108066"
-            android:backgroundTint="#1B3A1B" android:textColor="#4CAF50" android:textSize="12sp"/>
-    </LinearLayout>
-
-    <EditText android:id="@+id/etOther" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:hint="Or type another target number"
-        android:inputType="phone" android:textColor="#FFFFFF"
-        android:textColorHint="#777777" android:visibility="gone"/>
-
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:layout_marginTop="12dp">
         <Button android:id="@+id/btnUpload" android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="wrap_content" android:text="UPLOAD IMAGES"/>
         <Button android:id="@+id/btnScan" android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="wrap_content" android:text="SCAN CARD"/>
     </LinearLayout>
-
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="horizontal">
         <EditText android:id="@+id/etManualPin" android:layout_width="0dp" android:layout_weight="1"
@@ -55,12 +40,10 @@
     </LinearLayout>
 
     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="VOUCHER QUEUE (tap an item to remove it)"
-        android:textColor="#4CAF50" android:textStyle="bold" android:textSize="13sp"
-        android:layout_marginTop="12dp"/>
+        android:text="QUEUE (tap=remove / review=keep)"
+        android:textColor="#4CAF50" android:textStyle="bold" android:textSize="13sp" android:layout_marginTop="8dp"/>
     <ListView android:id="@+id/lvQueue" android:layout_width="match_parent"
-        android:layout_height="0dp" android:layout_weight="1" android:layout_marginTop="4dp"
-        android:divider="@null" android:background="#1A1A1A"/>
+        android:layout_height="0dp" android:layout_weight="1" android:divider="@null" android:background="#1A1A1A"/>
 
     <TextView android:id="@+id/tvProgress" android:layout_width="wrap_content"
         android:layout_height="wrap_content" android:text="0 of 0 processed"
@@ -75,7 +58,15 @@
             android:layout_height="wrap_content" android:text="STOP"
             android:backgroundTint="#B71C1C" android:textColor="#FFFFFF"/>
     </LinearLayout>
-
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button android:id="@+id/btnMode" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="MODE: SAFE 🛡"
+            android:backgroundTint="#333333" android:textColor="#FFFFFF"/>
+        <Button android:id="@+id/btnHistory" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:text="HISTORY"
+            android:backgroundTint="#333333" android:textColor="#FFFFFF"/>
+    </LinearLayout>
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="horizontal">
         <Button android:id="@+id/btnBalance" android:layout_width="0dp" android:layout_weight="1"
@@ -86,7 +77,7 @@
             android:backgroundTint="#333333" android:textColor="#FFFFFF"/>
     </LinearLayout>
 
-    <ScrollView android:layout_width="match_parent" android:layout_height="150dp" android:layout_marginTop="8dp">
+    <ScrollView android:layout_width="match_parent" android:layout_height="140dp" android:layout_marginTop="8dp">
         <TextView android:id="@+id/tvLog" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:textSize="11sp" android:textColor="#888888"/>
     </ScrollView>
