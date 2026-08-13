@@ -93,6 +93,12 @@ object Engine {
     fun addTarget(num0: String) {
         if (targets.none { it.number0 == num0 }) { targets.add(Target(num0, num0, true)); save(); ui?.invoke() }
     }
+    fun removeTarget(num0: String) {
+        if (num0 != "SELF" && !running) {
+            targets.removeAll { it.number0 == num0 }
+            save(); ui?.invoke()
+        }
+    }
 
     fun accessibilityOn(ctx: Context): Boolean {
         val s = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
@@ -100,10 +106,26 @@ object Engine {
     }
 
     fun start() {
-        if (targets.none { it.enabled }) { log?.invoke("🛑 Enable at least one target"); return }
+        if (targets.none { it.enabled }) { log?.invoke("HALT: enable at least one target"); return }
         running = true; consecFails = 0; successRun = 0; cooldownUntil = 0L
-        log?.invoke("▶ Started – ${queue.count { it.status == "PENDING" }} voucher(s), mode ${if (turbo) "TURBO" else "SAFE"}")
+        val n = queue.count { it.status == "PENDING" }
+        log?.invoke("START: $n voucher(s), mode ${if (turbo) "TURBO" else "SAFE"}")
+        logPlan(n)
         next()
+    }
+
+    private fun logPlan(count: Int) {
+        val en = targets.filter { it.enabled }
+        if (en.isEmpty() || count == 0) return
+        val tmp = en.associate { it.number0 to it.today }.toMutableMap()
+        val assign = linkedMapOf<String, Int>()
+        repeat(count) {
+            val pick = tmp.minByOrNull { it.value }?.key ?: return
+            tmp[pick] = (tmp[pick] ?: 0) + 1
+            assign[pick] = (assign[pick] ?: 0) + 1
+        }
+        log?.invoke("PLAN: " + assign.map { (k, v) -> "$v -> ${en.first { it.number0 == k }.label}" }
+            .joinToString(", "))
     }
 
     fun stop() {
@@ -111,19 +133,19 @@ object Engine {
         handler.removeCallbacksAndMessages(null)
         current?.let { if (it.status == "LOADING") it.status = "PENDING" }
         phase = "IDLE"
-        log?.invoke("⏹ Stopped.")
+        log?.invoke("STOP.")
         save(); ui?.invoke()
     }
 
     fun checkBalance() {
-        if (running) { log?.invoke("💰 Wait – automation running"); return }
+        if (running) { log?.invoke("BAL: wait - automation running"); return }
         phase = "BALANCE"
-        log?.invoke("💰 Checking balance…")
+        log?.invoke("BAL: checking...")
         dial("*144#")
         handler.postDelayed({
             if (phase == "BALANCE") {
                 phase = "IDLE"
-                log?.invoke("💰 No balance response")
+                log?.invoke("BAL: no response")
                 service?.clickButton("OK")
             }
         }, TIMEOUT_MS)
@@ -131,7 +153,7 @@ object Engine {
 
     private fun complete() {
         running = false; phase = "IDLE"
-        log?.invoke("🏁 COMPLETE. " + summary())
+        log?.invoke("DONE. " + summary())
         celebrate(); save(); ui?.invoke()
     }
 
@@ -146,7 +168,7 @@ object Engine {
         val pace = if (turbo) 0L else maxOf(0L, t.nextAt - now)
         val cool = if (turbo) 0L else maxOf(0L, cooldownUntil - now)
         val wait = maxOf(pace, cool)
-        if (cool > 0) log?.invoke("❄️ cool-down – ${cool / 1000}s")
+        if (cool > 0) log?.invoke("COOLDOWN: ${cool / 1000}s")
         handler.postDelayed({ if (running) send(item, t) }, wait)
     }
 
@@ -157,7 +179,7 @@ object Engine {
         item.status = "LOADING"; item.target = t.label
         t.today++; t.nextAt = System.currentTimeMillis() + if (turbo) TURBO_GAP_MS else SAFE_GAP_MS
         ui?.invoke()
-        log?.invoke("Dialing ••••${item.pin.takeLast(4)} → ${t.label}")
+        log?.invoke("DIAL ••••${item.pin.takeLast(4)} -> ${t.label}")
         val code = if (t.number0 == "SELF") "*141*${item.pin}#" else "*141*${item.pin}*${t.number0}*#"
         dial(code)
         handler.postDelayed({
@@ -173,7 +195,7 @@ object Engine {
         val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:" + code.replace("#", "%23")))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         try { appCtx?.startActivity(intent) }
-        catch (e: SecurityException) { log?.invoke("❌ Phone permission missing"); running = false }
+        catch (e: SecurityException) { log?.invoke("FAIL: phone permission missing"); running = false }
     }
 
     private fun doubleOk() = handler.postDelayed({ service?.clickButton("OK") }, 250)
@@ -186,7 +208,7 @@ object Engine {
                 ?: Regex("([0-9][0-9,.]{2,})\\s*ksh").find(t)
             if (m != null) {
                 balance = m.groupValues[1]
-                log?.invoke("💰 Balance: Ksh $balance")
+                log?.invoke("BAL: Ksh $balance")
                 ui?.invoke(); phase = "IDLE"
                 service?.clickButton("OK"); doubleOk()
             }
@@ -207,7 +229,7 @@ object Engine {
         if (t.contains("kindly wait") || t.contains("processing")) {
             val item = current ?: return
             decided = true
-            ok(item, "accepted – processing")
+            ok(item, "accepted - processing")
             service?.clickButton("OK"); doubleOk(); goNext()
             return
         }
@@ -218,7 +240,7 @@ object Engine {
                 .any { t.contains(it) } -> {
                 if (item.retries < 1) {
                     item.retries++; decided = true; item.status = "PENDING"
-                    log?.invoke("🔁 ••••${item.pin.takeLast(4)} – auto-retry")
+                    log?.invoke("RETRY ••••${item.pin.takeLast(4)}")
                     service?.clickButton("OK")
                     handler.postDelayed({ if (running) next() }, 300)
                 } else { decided = true; fail(item, short(t)); service?.clickButton("OK"); doubleOk(); goNext() }
@@ -244,9 +266,10 @@ object Engine {
         successRun++
         if (!turbo && successRun % 10 == 0) {
             cooldownUntil = System.currentTimeMillis() + COOLDOWN_MS
-            log?.invoke("❄️ 10 loaded – cool-down 10s")
+            log?.invoke("COOLDOWN: 10 loaded - 10s rest")
         }
-        log?.invoke("✅ ••••${item.pin.takeLast(4)} → ${item.target} – $m")
+        log?.invoke("OK ••••${item.pin.takeLast(4)} -> ${item.target} - $m")
+        tick()
         save(); ui?.invoke()
     }
 
@@ -254,12 +277,19 @@ object Engine {
         item.status = "FAILED"; item.note = m
         history.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|FAILED|${m.replace("|", "/")}")
         consecFails++
-        log?.invoke("❌ ••••${item.pin.takeLast(4)} → ${item.target} – $m")
+        log?.invoke("FAIL ••••${item.pin.takeLast(4)} -> ${item.target} - $m")
         if (consecFails >= 3) {
-            log?.invoke("🛑 3 fails in a row – auto-stopped. Rest that line.")
+            log?.invoke("HALT: 3 fails in a row - rest that line")
             stop()
         }
         save(); ui?.invoke()
+    }
+
+    private fun tick() {
+        try {
+            (appCtx?.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
+                ?.vibrate(VibrationEffect.createOneShot(60, 140))
+        } catch (_: Exception) { }
     }
 
     fun historyList(): List<String> = history.reversed()
