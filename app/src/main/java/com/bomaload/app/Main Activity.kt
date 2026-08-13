@@ -86,8 +86,8 @@ class MainActivity : AppCompatActivity() {
             if (n0 == null) toast("Enter a valid number") else { Engine.addTarget(n0); et.text.clear() }
         }
         findViewById<Button>(R.id.btnMode).setOnClickListener {
-            Engine.turbo = !Engine.turbo; Engine.save(); render()
-            toast(if (Engine.turbo) "TURBO: full speed, your risk" else "SAFE: 2.5s gap + 10s rest per 10")
+            Engine.fast = !Engine.fast; Engine.save(); render()
+            toast(if (Engine.fast) "FAST: lightning mode" else "SAFE: 2.5s gap + 10s rest per 10")
         }
         findViewById<Button>(R.id.btnHistory).setOnClickListener { startActivity(Intent(this, HistoryActivity::class.java)) }
         findViewById<Button>(R.id.btnStart).setOnClickListener { startAutomation() }
@@ -181,7 +181,9 @@ class MainActivity : AppCompatActivity() {
         OcrExtractor.extract(b, expected) { r ->
             runOnUiThread {
                 val c = Engine.addPins(r.pins)
-                r.review.forEach { rv -> if (!Engine.review.contains(rv)) Engine.review.add(rv) }
+                r.review.forEach { rv ->
+                    if (!Engine.inVault(rv) && !Engine.review.contains(rv)) Engine.review.add(rv)
+                }
                 val found = c[0] + c[1]
                 Engine.log?.invoke("IMG: ${c[0]} new, ${c[1]} loaded-before, ${r.review.size} review")
                 if (r.expired) toast("WARN: expired card detected")
@@ -246,7 +248,7 @@ class MainActivity : AppCompatActivity() {
         val pend = Engine.queue.count { it.status == "PENDING" }
         findViewById<ProgressBar>(R.id.pb).progress = if (total > 0) done * 100 / total else 0
         val act = maxOf(1, Engine.targets.count { it.enabled })
-        val perPin = if (Engine.turbo) 3L else 2500L / act + 2L
+        val perPin = if (Engine.fast) 3L else 2500L / act + 2L
         val eta = if (Engine.running && pend > 0) pend * perPin else 0
         findViewById<TextView>(R.id.tvProgress).text =
             "$done of $total processed" + if (eta > 0) "  ·  ~${eta}s left" else ""
@@ -256,10 +258,10 @@ class MainActivity : AppCompatActivity() {
         val rd = findViewById<TextView>(R.id.tvBReader)
         rd.text = if (Engine.service != null) "READER ON" else "READER OFF"
         rd.setTextColor(if (Engine.service != null) 0xFF0ECB81.toInt() else 0xFFF6465D.toInt())
-        findViewById<TextView>(R.id.tvBMode).text = if (Engine.turbo) "TURBO" else "SAFE"
+        findViewById<TextView>(R.id.tvBMode).text = if (Engine.fast) "FAST" else "SAFE"
         findViewById<TextView>(R.id.tvBToday).text = "TODAY ${Engine.targets.sumOf { it.today }}"
         findViewById<Button>(R.id.btnMode).text =
-            if (Engine.turbo) "MODE: TURBO" else "MODE: SAFE"
+            if (Engine.fast) "MODE: FAST" else "MODE: SAFE"
     }
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
