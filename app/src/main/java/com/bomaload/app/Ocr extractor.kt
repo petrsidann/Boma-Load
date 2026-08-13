@@ -35,7 +35,8 @@ object OcrExtractor {
 
         fun nextPass(i: Int) {
             if (i >= passCount || (i >= 4 && zeroStreak >= 2)) {
-                onDone(Result(pins.toList(), review.toList(), expired)); return
+                val pruned = review.filter { rv -> pins.none { it.contains(rv) } }
+                onDone(Result(pins.toList(), pruned, expired)); return
             }
             val before = pins.size + review.size
             recognizer.process(InputImage.fromBitmap(passBitmap(i), 0))
@@ -99,7 +100,7 @@ object OcrExtractor {
         return bad.any { cur.contains(it) || prev.contains(it) }
     }
 
-    private val FRAG = Regex("^\\d{4}(\\s\\d{4}){0,2}$")
+    private val HALF8 = Regex("^\\d{4}\\s\\d{4}$")
 
     fun parse(text: String): Result {
         val lines = text.split("\n")
@@ -123,19 +124,19 @@ object OcrExtractor {
                 if (it.groupValues[1] != SAMPLE) pins.add(it.groupValues[1])
             }
 
-            if (hasLetters) continue   // text lines can NEVER become pins
+            if (hasLetters) continue
 
             when {
                 clean.length == 16 && clean != SAMPLE -> pins.add(clean)
-                clean.length in 14..18 && clean.length != 16 -> review.add(clean)
+                clean.length in 8..18 && clean.length != 16 -> review.add(clean)
             }
 
-            if (FRAG.matches(t) && i + 1 < lines.size) {
+            // Only 8+8 merges are trusted (the one split shape these cards produce)
+            if (HALF8.matches(t) && i + 1 < lines.size) {
                 val nt = lines[i + 1].trim()
-                if (FRAG.matches(nt)) {
+                if (HALF8.matches(nt)) {
                     val s = clean + nt.replace(Regex("[^0-9]"), "")
                     if (s.length == 16 && s != SAMPLE) pins.add(s)
-                    else if (s.length in 14..18) review.add(s)
                 }
             }
         }
