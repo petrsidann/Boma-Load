@@ -12,16 +12,6 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 object OcrExtractor {
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
     private const val SAMPLE = "1234567890123456"
-    private val CONF = mapOf(
-        'O' to '0', 'Q' to '0', 'D' to '0', 'U' to '0',
-        'I' to '1', 'L' to '1',
-        'S' to '5',
-        'B' to '8', 'E' to '8',
-        'Z' to '2', 'R' to '2',
-        'G' to '6',
-        'T' to '7', 'V' to '7',
-        'A' to '4'
-    )
 
     data class Result(val pins: List<String>, val review: List<String>, val expired: Boolean)
 
@@ -32,6 +22,7 @@ object OcrExtractor {
         val pins = LinkedHashSet<String>()
         val review = LinkedHashSet<String>()
         var expired = false
+        var zeroStreak = 0
 
         fun passBitmap(i: Int): Bitmap = when {
             i == 0 -> b
@@ -43,13 +34,15 @@ object OcrExtractor {
         }
 
         fun nextPass(i: Int) {
-            if (i >= passCount || pins.size >= expected) {
+            if (i >= passCount || (i >= 4 && zeroStreak >= 2)) {
                 onDone(Result(pins.toList(), review.toList(), expired)); return
             }
+            val before = pins.size + review.size
             recognizer.process(InputImage.fromBitmap(passBitmap(i), 0))
                 .addOnSuccessListener { res ->
                     val r = parse(res.text)
                     pins.addAll(r.pins); review.addAll(r.review); expired = expired || r.expired
+                    zeroStreak = if ((pins.size + review.size) == before) zeroStreak + 1 else 0
                     nextPass(i + 1)
                 }
                 .addOnFailureListener { nextPass(i + 1) }
@@ -99,14 +92,14 @@ object OcrExtractor {
         0f, 0f, -1f, 0f, 255f,
         0f, 0f, 0f, 1f, 0f)))
 
-    private fun deconfuse(s: String) = s.map { CONF[it.uppercaseChar()] ?: it }.joinToString("")
-
     private fun shielded(lines: List<String>, i: Int): Boolean {
         val bad = listOf("SERIAL", "EXPIRY", "AIRTIME", "KEYS")
         val cur = lines[i].uppercase()
         val prev = if (i > 0) lines[i - 1].uppercase() else ""
         return bad.any { cur.contains(it) || prev.contains(it) }
     }
+
+    private val FRAG = Regex("^\\d{4}(\\s\\d{4}){0,2}$")
 
     fun parse(text: String): Result {
         val lines = text.split("\n")
@@ -122,25 +115,27 @@ object OcrExtractor {
 
         for (i in lines.indices) {
             if (shielded(lines, i)) continue
-            val raw = lines[i]
-            val clean = raw.replace(Regex("[^0-9]"), "")
-            val cleanD = deconfuse(raw).replace(Regex("[^0-9]"), "")
+            val t = lines[i].trim()
+            val hasLetters = t.any { it.isLetter() }
+            val clean = t.replace(Regex("[^0-9]"), "")
 
-            listOf(clean, cleanD).forEach { c ->
-                if (c.length == 16 && c != SAMPLE) pins.add(c)
-                if (c.length in 14..18 && c.length != 16) review.add(c)
+            Regex("\\*141\\*([0-9]{16})").find(t)?.let {
+                if (it.groupValues[1] != SAMPLE) pins.add(it.groupValues[1])
             }
-            listOf(raw, deconfuse(raw)).forEach { r ->
-                Regex("\\*141\\*([0-9]{16})").find(r)?.let {
-                    if (it.groupValues[1] != SAMPLE) pins.add(it.groupValues[1])
-                }
+
+            if (hasLetters) continue   // text lines can NEVER become pins
+
+            when {
+                clean.length == 16 && clean != SAMPLE -> pins.add(clean)
+                clean.length in 14..18 && clean.length != 16 -> review.add(clean)
             }
-            if (clean.length in 4..12 && i + 1 < lines.size) {
-                val nxt = lines[i + 1].replace(Regex("[^0-9]"), "")
-                if (nxt.length in 4..12) {
-                    val sum = clean.length + nxt.length
-                    if (sum == 16) pins.add(clean + nxt)
-                    else if (sum in 14..18) review.add(clean + nxt)
+
+            if (FRAG.matches(t) && i + 1 < lines.size) {
+                val nt = lines[i + 1].trim()
+                if (FRAG.matches(nt)) {
+                    val s = clean + nt.replace(Regex("[^0-9]"), "")
+                    if (s.length == 16 && s != SAMPLE) pins.add(s)
+                    else if (s.length in 14..18) review.add(s)
                 }
             }
         }
