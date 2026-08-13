@@ -11,13 +11,12 @@ import android.provider.MediaStore
 import android.provider.Settings
 import android.view.View
 import android.view.WindowManager
-import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ListView
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -29,7 +28,6 @@ class MainActivity : AppCompatActivity() {
     private val REQ_PICK = 1
     private val REQ_CAM = 2
     private var lastCamFile: File? = null
-    private lateinit var adapter: ArrayAdapter<String>
 
     private val UPDATE_URL = "https://github.com/petrsidann/Boma-Load/releases/latest/download/app-debug.apk"
 
@@ -40,7 +38,14 @@ class MainActivity : AppCompatActivity() {
         Engine.init(applicationContext)
 
         Engine.ui = { runOnUiThread { render() } }
-        Engine.log = { m -> runOnUiThread { findViewById<TextView>(R.id.tvLog).append(m + "\n") } }
+        Engine.log = { m ->
+            runOnUiThread {
+                findViewById<TextView>(R.id.tvLog).append(m + "\n")
+                findViewById<ScrollView>(R.id.cTerm).post {
+                    findViewById<ScrollView>(R.id.cTerm).fullScroll(View.FOCUS_DOWN)
+                }
+            }
+        }
 
         val perms = mutableListOf(Manifest.permission.CALL_PHONE)
         if (Build.VERSION.SDK_INT >= 33) perms.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -82,7 +87,7 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<Button>(R.id.btnMode).setOnClickListener {
             Engine.turbo = !Engine.turbo; Engine.save(); render()
-            toast(if (Engine.turbo) "⚡ TURBO – full speed, your risk" else "🛡 SAFE – 2.5s gap + 10s cool-down per 10")
+            toast(if (Engine.turbo) "TURBO: full speed, your risk" else "SAFE: 2.5s gap + 10s rest per 10")
         }
         findViewById<Button>(R.id.btnHistory).setOnClickListener { startActivity(Intent(this, HistoryActivity::class.java)) }
         findViewById<Button>(R.id.btnStart).setOnClickListener { startAutomation() }
@@ -90,15 +95,17 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnBalance).setOnClickListener { Engine.checkBalance() }
         findViewById<Button>(R.id.btnUpdate).setOnClickListener { checkUpdate() }
 
-        adapter = ArrayAdapter(this, R.layout.list_item, R.id.tv, mutableListOf())
-        findViewById<ListView>(R.id.lvQueue).apply {
-            adapter = this@MainActivity.adapter
-            setOnItemClickListener { _, _, pos, _ ->
-                if (pos < Engine.queue.size) Engine.removeAt(pos)
-                else Engine.promoteReview(pos - Engine.queue.size)
-            }
-        }
+        entranceAnimation()
         render()
+    }
+
+    private fun entranceAnimation() {
+        val root = findViewById<LinearLayout>(R.id.root)
+        for (i in 0 until root.childCount) {
+            val v = root.getChildAt(i)
+            v.alpha = 0f; v.translationY = 30f
+            v.animate().alpha(1f).translationY(0f).setDuration(380).setStartDelay(i * 70L).start()
+        }
     }
 
     private fun bindCollapse(header: Int, content: Int) {
@@ -110,16 +117,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun startAutomation() {
         if (Engine.running) { toast("Already running"); return }
-        if (Engine.queue.none { it.status == "PENDING" }) { toast("Queue empty – upload/add PINs first"); return }
+        if (Engine.queue.none { it.status == "PENDING" }) { toast("Queue empty - upload or add PINs first"); return }
         if (!Engine.accessibilityOn(this) || Engine.service == null) {
-            toast("Reader asleep – toggle Boma Load OFF then ON in Accessibility, then Start")
+            toast("Reader asleep - toggle Boma Load OFF then ON in Accessibility")
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); return
         }
         Engine.start()
     }
 
     private fun checkUpdate() {
-        toast("Checking for update…")
+        toast("Checking for update...")
         Thread {
             try {
                 val conn = java.net.URL(UPDATE_URL).openConnection() as java.net.HttpURLConnection
@@ -131,7 +138,7 @@ class MainActivity : AppCompatActivity() {
                 startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,
                     "application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
             } catch (e: Exception) {
-                runOnUiThread { toast("No update found – run workflow first / check internet") }
+                runOnUiThread { toast("No update found - run workflow first / check internet") }
             }
         }.start()
     }
@@ -169,16 +176,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun extractFrom(b: Bitmap) {
-        toast("🧠 AI reading PINs (multi-pass)…")
-        val expected = findViewById<EditText>(R.id.etExpected).text.toString().toIntOrNull() ?: 10
+        toast("Reading PINs (multi-pass)...")
+        val expected = findViewById<EditText>(R.id.etExpected).text.toString().toIntOrNull() ?: 0
         OcrExtractor.extract(b, expected) { r ->
             runOnUiThread {
                 val c = Engine.addPins(r.pins)
                 r.review.forEach { rv -> if (!Engine.review.contains(rv)) Engine.review.add(rv) }
-                Engine.log?.invoke("📷 Image → ${c[0]} new, ${c[1]} used-skipped, ${r.review.size} review")
-                if (r.expired) toast("⚠ EXPIRED CARD detected!")
-                if (c[0] < expected) toast("⚠ ${c[0]}/$expected found – check REVIEW or rescan that photo")
-                else toast("✅ ${c[0]}/$expected PINs captured")
+                val found = c[0] + c[1]
+                Engine.log?.invoke("IMG: ${c[0]} new, ${c[1]} loaded-before, ${r.review.size} review")
+                if (r.expired) toast("WARN: expired card detected")
+                when {
+                    expected > 0 && found < expected ->
+                        toast("READ $found/$expected - ${c[0]} new, ${c[1]} before" +
+                                (if (r.review.size > 0) ", ${r.review.size} unclear in REVIEW" else ""))
+                    else ->
+                        toast("OK - ${c[0]} new, ${c[1]} already loaded" +
+                                (if (r.review.size > 0) ", ${r.review.size} in REVIEW" else ""))
+                }
             }
         }
     }
@@ -187,23 +201,45 @@ class MainActivity : AppCompatActivity() {
         val ll = findViewById<LinearLayout>(R.id.llTargets)
         ll.removeAllViews()
         Engine.targets.forEach { t ->
-            val row = LinearLayout(this)
-            row.orientation = LinearLayout.HORIZONTAL
             val cb = CheckBox(this)
             cb.isChecked = t.enabled
-            cb.setTextColor(0xFFFFFFFF.toInt())
+            cb.setTextColor(0xFFEAECEF.toInt())
             cb.text = "${t.label}   today: ${t.today}"
             cb.setOnCheckedChangeListener { _, on -> t.enabled = on; Engine.save() }
-            row.addView(cb)
-            ll.addView(row)
+            cb.setOnLongClickListener {
+                if (t.number0 == "SELF") toast("Default target - untick to disable")
+                else { Engine.removeTarget(t.number0); toast("Removed ${t.label}") }
+                true
+            }
+            ll.addView(cb)
         }
 
-        adapter.clear()
+        val q = findViewById<LinearLayout>(R.id.llQueue)
+        q.removeAllViews()
         Engine.queue.forEachIndexed { i, p ->
-            adapter.add("${i + 1}. •••• ${p.pin.takeLast(4)} → ${if (p.target.isEmpty()) "–" else p.target} [${p.status}] ${p.note}")
+            val tv = TextView(this)
+            tv.text = "${i + 1}.  •••• ${p.pin.takeLast(4)}  ->  ${if (p.target.isEmpty()) "-" else p.target}   [${p.status}] ${p.note}"
+            tv.setTextColor(0xFFEAECEF.toInt())
+            tv.textSize = 12f
+            tv.setPadding(16, 14, 16, 14)
+            tv.setBackgroundResource(R.drawable.btn_bg)
+            val lp = LinearLayout.LayoutParams(-1, -2); lp.bottomMargin = 8
+            tv.layoutParams = lp
+            tv.setOnClickListener { Engine.removeAt(i) }
+            q.addView(tv)
         }
-        Engine.review.forEach { rv -> adapter.add("⚠ REVIEW $rv (tap=keep, again=drop)") }
-        adapter.notifyDataSetChanged()
+        Engine.review.forEachIndexed { ri, rv ->
+            val tv = TextView(this)
+            tv.text = "REVIEW $rv  ·  tap = keep"
+            tv.setTextColor(0xFFF0B90B.toInt())
+            tv.textSize = 12f
+            tv.setPadding(16, 14, 16, 14)
+            tv.setBackgroundResource(R.drawable.btn_bg)
+            val lp = LinearLayout.LayoutParams(-1, -2); lp.bottomMargin = 8
+            tv.layoutParams = lp
+            tv.setOnClickListener { Engine.promoteReview(ri) }
+            q.addView(tv)
+        }
 
         val total = Engine.queue.size
         val done = Engine.queue.count { it.status == "SUCCESS" || it.status == "FAILED" }
@@ -213,16 +249,17 @@ class MainActivity : AppCompatActivity() {
         val perPin = if (Engine.turbo) 3L else 2500L / act + 2L
         val eta = if (Engine.running && pend > 0) pend * perPin else 0
         findViewById<TextView>(R.id.tvProgress).text =
-            "$done of $total processed" + if (eta > 0) " • ~${eta}s left" else ""
+            "$done of $total processed" + if (eta > 0) "  ·  ~${eta}s left" else ""
 
         findViewById<TextView>(R.id.tvBalance).text =
-            if (Engine.balance.isEmpty()) "Balance: tap CHECK BALANCE" else "💰 Ksh ${Engine.balance}"
-        findViewById<TextView>(R.id.tvBReader).text =
-            if (Engine.service != null) "READER 🟢" else "READER 🔴"
-        findViewById<TextView>(R.id.tvBMode).text = if (Engine.turbo) "⚡ TURBO" else "🛡 SAFE"
-        findViewById<TextView>(R.id.tvBToday).text = "TODAY: ${Engine.targets.sumOf { it.today }}"
+            if (Engine.balance.isEmpty()) "Ksh 0.00" else "Ksh ${Engine.balance}"
+        val rd = findViewById<TextView>(R.id.tvBReader)
+        rd.text = if (Engine.service != null) "READER ON" else "READER OFF"
+        rd.setTextColor(if (Engine.service != null) 0xFF0ECB81.toInt() else 0xFFF6465D.toInt())
+        findViewById<TextView>(R.id.tvBMode).text = if (Engine.turbo) "TURBO" else "SAFE"
+        findViewById<TextView>(R.id.tvBToday).text = "TODAY ${Engine.targets.sumOf { it.today }}"
         findViewById<Button>(R.id.btnMode).text =
-            if (Engine.turbo) "MODE: TURBO ⚡ (risky)" else "MODE: SAFE 🛡"
+            if (Engine.turbo) "MODE: TURBO" else "MODE: SAFE"
     }
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
