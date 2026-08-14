@@ -268,7 +268,7 @@ class MainActivity : AppCompatActivity() {
             val tv = TextView(this)
             tv.text = pin
             tv.setTextColor(0xFFF0B90B.toInt())
-            tv.textSize = 11sp2Float()
+            tv.textSize = 11f
             tv.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
             row.addView(tv)
             val keep = Button(this)
@@ -308,8 +308,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnMode).text =
             if (Engine.fast) "MODE: FAST" else "MODE: SAFE"
     }
-
-    private fun Int.sp2Float() = this.toFloat()
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
 }
