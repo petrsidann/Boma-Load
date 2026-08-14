@@ -26,7 +26,7 @@
                     android:textColor="#848E9C" android:background="@drawable/btn_bg" android:padding="7dp"
                     android:gravity="center" android:letterSpacing="0.1" android:layout_marginEnd="6dp"/>
                 <TextView android:id="@+id/tvBToday" android:layout_width="0dp" android:layout_weight="1"
-                    android:layout_height="wrap_content" android:text="TODAY 0" android:textSize="10sp"
+                    android:layout_height="wrap_content" android:text="TODAY 0 · 100%" android:textSize="10sp"
                     android:textColor="#848E9C" android:background="@drawable/btn_bg" android:padding="7dp"
                     android:gravity="center" android:letterSpacing="0.1"/>
             </LinearLayout>
@@ -97,7 +97,7 @@
             android:orientation="vertical" android:background="@drawable/card_bg"
             android:padding="14dp" android:layout_marginTop="12dp">
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="QUEUE  ·  TAP = REMOVE / KEEP REVIEW"
+                android:text="QUEUE  ·  TAP = REMOVE"
                 android:textColor="#848E9C" android:textSize="11sp" android:letterSpacing="0.15"/>
             <LinearLayout android:id="@+id/llQueue" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginTop="8dp"/>
@@ -113,6 +113,19 @@
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
             android:orientation="vertical" android:background="@drawable/card_bg"
             android:padding="14dp" android:layout_marginTop="12dp">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="REVIEW  ·  KEEP OR DROP"
+                android:textColor="#848E9C" android:textSize="11sp" android:letterSpacing="0.15"/>
+            <TextView android:id="@+id/tvReviewCount" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:text="no unclear pins"
+                android:textColor="#F0B90B" android:textSize="10sp" android:layout_marginTop="4dp"/>
+            <LinearLayout android:id="@+id/llReview" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginTop="6dp"/>
+        </LinearLayout>
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:background="@drawable/card_bg"
+            android:padding="14dp" android:layout_marginTop="12dp">
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal">
                 <Button android:id="@+id/btnStart" android:layout_width="0dp" android:layout_weight="1"
@@ -123,6 +136,9 @@
                     android:layout_height="48dp" android:text="STOP" android:textSize="13sp"
                     android:background="@drawable/btn_red" android:textColor="#FFFFFF"/>
             </LinearLayout>
+            <Button android:id="@+id/btnRequeue" android:layout_width="match_parent"
+                android:layout_height="42dp" android:text="RE-QUEUE UNLOADED" android:textSize="11sp"
+                android:background="@drawable/btn_bg" android:textColor="#F0B90B" android:layout_marginTop="8dp"/>
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:layout_marginTop="8dp">
                 <Button android:id="@+id/btnMode" android:layout_width="0dp" android:layout_weight="1"
