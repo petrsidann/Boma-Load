@@ -12,8 +12,9 @@ import android.os.Vibrator
 import android.provider.Settings
 
 object Engine {
-    data class PinItem(val pin: String, var status: String = "PENDING", var note: String = "", var target: String = "", var retries: Int = 0)
+    data class PinItem(val pin: String, var status: String = "PENDING", var note: String = "", var target: String = "", var retries: Int = 0, var timeouts: Int = 0)
     data class Target(val number0: String, val label: String, var enabled: Boolean, var today: Int = 0, var nextAt: Long = 0L)
+    data class AddResult(val new: Int, val used: Int, val usedPins: List<String>)
 
     val queue = mutableListOf<PinItem>()
     val review = mutableListOf<String>()
@@ -30,6 +31,9 @@ object Engine {
     const val FAST_GAP_MS = 200L
     const val COOLDOWN_MS = 10_000L
     const val TIMEOUT_MS = 6000L
+    const val MAX_CONN_RETRIES = 3
+    const val MAX_TIMEOUT_RETRIES = 2
+    const val MAX_SWEEPS = 2
 
     private val handler = Handler(Looper.getMainLooper())
     private var current: PinItem? = null
@@ -37,8 +41,10 @@ object Engine {
     private var phase = "IDLE"
     private var consecFails = 0
     private var successRun = 0
+    private var sweep = 0
     private var cooldownUntil = 0L
     private var dialAt = 0L
+    private var batchStartAt = 0L
     private val vault = mutableSetOf<String>()
     private val history = mutableListOf<String>()
 
@@ -75,23 +81,29 @@ object Engine {
     }
 
     fun inVault(p: String) = vault.contains(p)
+    fun vaultList(): List<String> = vault.toList().sorted()
+    fun vaultRemove(p: String) { vault.remove(p); save(); ui?.invoke() }
+    fun vaultClear() { vault.clear(); save(); ui?.invoke() }
 
-    fun addPins(list: List<String>): IntArray {
-        var new = 0; var used = 0
+    fun addPins(list: List<String>): AddResult {
+        var new = 0; val usedPins = mutableListOf<String>()
         list.forEach { p ->
             when {
-                vault.contains(p) -> used++
+                vault.contains(p) -> usedPins.add(p)
                 queue.none { it.pin == p } -> { queue.add(PinItem(p)); new++ }
             }
         }
         save(); ui?.invoke()
-        return intArrayOf(new, used)
+        return AddResult(new, usedPins.size, usedPins)
     }
 
     fun addPin(p: String) { addPins(listOf(p)) }
     fun removeAt(i: Int) { if (!running && i in queue.indices) { queue.removeAt(i); save(); ui?.invoke() } }
     fun promoteReview(i: Int) {
         if (i in review.indices) { queue.add(PinItem(review.removeAt(i))); save(); ui?.invoke() }
+    }
+    fun dropReview(i: Int) {
+        if (i in review.indices) { review.removeAt(i); save(); ui?.invoke() }
     }
     fun addTarget(num0: String) {
         if (targets.none { it.number0 == num0 }) { targets.add(Target(num0, num0, true)); save(); ui?.invoke() }
@@ -103,6 +115,35 @@ object Engine {
         }
     }
 
+    fun requeueUnloaded(): Int {
+        var n = 0
+        queue.forEach {
+            if (it.status == "FAILED" && !isDefinitive(it.note)) {
+                it.status = "PENDING"; it.retries = 0; it.timeouts = 0; n++
+            }
+        }
+        review.forEach { queue.add(PinItem(it)); n++ }
+        review.clear()
+        save(); ui?.invoke()
+        return n
+    }
+
+    private fun isDefinitive(note: String) =
+        listOf("been used", "already used", "invalid", "does not exist", "expired").any { note.contains(it, true) }
+    private fun isRetryable(note: String) =
+        listOf("timeout", "connection", "mmi", "network", "no confirmation").any { note.contains(it, true) }
+
+    fun todayStats(): Pair<Int, Int> {
+        val cal = java.util.Calendar.getInstance()
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
+        val t0 = cal.timeInMillis
+        val todays = history.filter { (it.split("|").firstOrNull()?.toLongOrNull() ?: 0L) >= t0 }
+        val s = todays.count { it.contains("|SUCCESS|") }
+        val f = todays.count { it.contains("|FAILED|") }
+        return s to (s + f)
+    }
+
     fun accessibilityOn(ctx: Context): Boolean {
         val s = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
         return s.contains("UssdAutomationService")
@@ -110,7 +151,8 @@ object Engine {
 
     fun start() {
         if (targets.none { it.enabled }) { log?.invoke("HALT: enable at least one target"); return }
-        running = true; consecFails = 0; successRun = 0; cooldownUntil = 0L
+        running = true; consecFails = 0; successRun = 0; sweep = 0; cooldownUntil = 0L
+        batchStartAt = System.currentTimeMillis()
         val n = queue.count { it.status == "PENDING" }
         log?.invoke("START: $n voucher(s), mode ${if (fast) "FAST" else "SAFE"}")
         logPlan(n)
@@ -155,8 +197,18 @@ object Engine {
     }
 
     private fun complete() {
+        val retryable = queue.filter { it.status == "FAILED" && isRetryable(it.note) }
+        if (sweep < MAX_SWEEPS && retryable.isNotEmpty()) {
+            sweep++
+            retryable.forEach { it.status = "PENDING"; it.retries = 0; it.timeouts = 0 }
+            log?.invoke("SWEEP $sweep: healing ${retryable.size} pin(s)")
+            ui?.invoke()
+            next()
+            return
+        }
         running = false; phase = "IDLE"
-        log?.invoke("DONE. " + summary())
+        val secs = (System.currentTimeMillis() - batchStartAt) / 1000
+        log?.invoke("DONE in ${secs}s. " + summary())
         celebrate(); save(); ui?.invoke()
     }
 
@@ -188,8 +240,8 @@ object Engine {
         dial(code)
         handler.postDelayed({
             if (!decided && current == item && running && phase == "TOPUP") {
-                if (item.retries < 1) {
-                    item.retries++; decided = true; item.status = "PENDING"
+                if (item.timeouts < MAX_TIMEOUT_RETRIES) {
+                    item.timeouts++; decided = true; item.status = "PENDING"
                     log?.invoke("RETRY ••••${item.pin.takeLast(4)} (no response)")
                     handler.postDelayed({ if (running) next() }, 300)
                 } else {
@@ -249,11 +301,11 @@ object Engine {
         when {
             listOf("connection problem", "invalid mmi", "network error", "try again")
                 .any { t.contains(it) } -> {
-                if (item.retries < 1) {
+                if (item.retries < MAX_CONN_RETRIES) {
                     item.retries++; decided = true; item.status = "PENDING"
-                    log?.invoke("RETRY ••••${item.pin.takeLast(4)} (network)")
+                    log?.invoke("RETRY ••••${item.pin.takeLast(4)} (network ${item.retries}/$MAX_CONN_RETRIES)")
                     service?.clickButton("OK")
-                    handler.postDelayed({ if (running) next() }, 300)
+                    handler.postDelayed({ if (running) next() }, 1000)
                 } else { decided = true; fail(item, short(t)); service?.clickButton("OK"); doubleOk(); goNext() }
             }
             listOf("been used", "already used", "invalid", "expired", "not valid", "wrong pin",
@@ -307,8 +359,7 @@ object Engine {
     fun clearHistory() { history.clear(); save(); }
     fun retryFailed(): Int {
         var n = 0
-        history.filter { it.contains("|FAILED|") }
-            .filter { listOf("timeout", "connection", "mmi", "network").any { w -> it.contains(w) } }
+        history.filter { it.contains("|FAILED|") && !isDefinitive(it.substringAfter("|FAILED|", "")) }
             .forEach { line ->
                 val pin = line.split("|").getOrNull(1) ?: return@forEach
                 if (pin.length == 16 && !vault.contains(pin) && queue.none { it.pin == pin }) {
