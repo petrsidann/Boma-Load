@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -21,6 +22,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
+import androidx.exifinterface.media.ExifInterface
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -40,10 +42,10 @@ class MainActivity : AppCompatActivity() {
         Engine.ui = { runOnUiThread { render() } }
         Engine.log = { m ->
             runOnUiThread {
+                val sv = findViewById<ScrollView>(R.id.cTerm)
+                val atBottom = !sv.canScrollVertically(1)
                 findViewById<TextView>(R.id.tvLog).append(m + "\n")
-                findViewById<ScrollView>(R.id.cTerm).post {
-                    findViewById<ScrollView>(R.id.cTerm).fullScroll(View.FOCUS_DOWN)
-                }
+                if (atBottom) sv.post { sv.fullScroll(View.FOCUS_DOWN) }
             }
         }
 
@@ -88,6 +90,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnMode).setOnClickListener {
             Engine.fast = !Engine.fast; Engine.save(); render()
             toast(if (Engine.fast) "FAST: lightning mode" else "SAFE: 2.5s gap + 10s rest per 10")
+        }
+        findViewById<Button>(R.id.btnRequeue).setOnClickListener {
+            toast("${Engine.requeueUnloaded()} re-queued")
         }
         findViewById<Button>(R.id.btnHistory).setOnClickListener { startActivity(Intent(this, HistoryActivity::class.java)) }
         findViewById<Button>(R.id.btnStart).setOnClickListener { startAutomation() }
@@ -155,9 +160,27 @@ class MainActivity : AppCompatActivity() {
                 uris.forEach { processUri(it) }
             }
             REQ_CAM -> lastCamFile?.let { f ->
-                BitmapFactory.decodeFile(f.absolutePath)?.let { extractFrom(shrink(it)) }
+                oriented(f.absolutePath)?.let { extractFrom(shrink(it)) }
             }
         }
+    }
+
+    private fun oriented(path: String): Bitmap? {
+        val b = BitmapFactory.decodeFile(path) ?: return null
+        return try {
+            val ex = ExifInterface(path)
+            when (ex.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> rotate(b, 90f)
+                ExifInterface.ORIENTATION_ROTATE_180 -> rotate(b, 180f)
+                ExifInterface.ORIENTATION_ROTATE_270 -> rotate(b, 270f)
+                else -> b
+            }
+        } catch (e: Exception) { b }
+    }
+
+    private fun rotate(b: Bitmap, d: Float): Bitmap {
+        val m = Matrix(); m.postRotate(d)
+        return Bitmap.createBitmap(b, 0, 0, b.width, b.height, m, true)
     }
 
     private fun processUri(uri: Uri) {
@@ -184,16 +207,16 @@ class MainActivity : AppCompatActivity() {
                 r.review.forEach { rv ->
                     if (!Engine.inVault(rv) && !Engine.review.contains(rv)) Engine.review.add(rv)
                 }
-                val found = c[0] + c[1]
-                Engine.log?.invoke("IMG: ${c[0]} new, ${c[1]} loaded-before, ${r.review.size} review")
+                val found = c.new + c.used
+                val skipped = if (c.usedPins.isNotEmpty())
+                    " [skipped: " + c.usedPins.joinToString(",") { "••••${it.takeLast(4)}" } + "]" else ""
+                Engine.log?.invoke("IMG: ${c.new} new, ${c.used} before$skipped, ${r.review.size} review")
                 if (r.expired) toast("WARN: expired card detected")
                 when {
                     expected > 0 && found < expected ->
-                        toast("READ $found/$expected - ${c[0]} new, ${c[1]} before" +
-                                (if (r.review.size > 0) ", ${r.review.size} unclear in REVIEW" else ""))
+                        toast("READ $found/$expected - ${c.new} new, ${c.used} before$skipped")
                     else ->
-                        toast("OK - ${c[0]} new, ${c[1]} already loaded" +
-                                (if (r.review.size > 0) ", ${r.review.size} in REVIEW" else ""))
+                        toast("OK - ${c.new} new, ${c.used} already loaded$skipped")
                 }
             }
         }
@@ -230,17 +253,37 @@ class MainActivity : AppCompatActivity() {
             tv.setOnClickListener { Engine.removeAt(i) }
             q.addView(tv)
         }
-        Engine.review.forEachIndexed { ri, rv ->
-            val tv = TextView(this)
-            tv.text = "REVIEW $rv  ·  tap = keep"
-            tv.setTextColor(0xFFF0B90B.toInt())
-            tv.textSize = 12f
-            tv.setPadding(16, 14, 16, 14)
-            tv.setBackgroundResource(R.drawable.btn_bg)
+
+        val rvw = findViewById<LinearLayout>(R.id.llReview)
+        rvw.removeAllViews()
+        findViewById<TextView>(R.id.tvReviewCount).text =
+            if (Engine.review.isEmpty()) "no unclear pins" else "${Engine.review.size} unclear - keep or drop"
+        Engine.review.forEachIndexed { ri, pin ->
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.setBackgroundResource(R.drawable.btn_bg)
             val lp = LinearLayout.LayoutParams(-1, -2); lp.bottomMargin = 8
-            tv.layoutParams = lp
-            tv.setOnClickListener { Engine.promoteReview(ri) }
-            q.addView(tv)
+            row.layoutParams = lp
+            row.setPadding(12, 10, 12, 10)
+            val tv = TextView(this)
+            tv.text = pin
+            tv.setTextColor(0xFFF0B90B.toInt())
+            tv.textSize = 11sp2Float()
+            tv.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
+            row.addView(tv)
+            val keep = Button(this)
+            keep.text = "KEEP"; keep.textSize = 10f
+            keep.setBackgroundResource(R.drawable.btn_green)
+            keep.setTextColor(0xFF0B0E11.toInt())
+            keep.setOnClickListener { Engine.promoteReview(ri) }
+            row.addView(keep)
+            val drop = Button(this)
+            drop.text = "DROP"; drop.textSize = 10f
+            drop.setBackgroundResource(R.drawable.btn_red)
+            drop.setTextColor(0xFFFFFFFF.toInt())
+            drop.setOnClickListener { Engine.dropReview(ri) }
+            row.addView(drop)
+            rvw.addView(row)
         }
 
         val total = Engine.queue.size
@@ -258,11 +301,15 @@ class MainActivity : AppCompatActivity() {
         val rd = findViewById<TextView>(R.id.tvBReader)
         rd.text = if (Engine.service != null) "READER ON" else "READER OFF"
         rd.setTextColor(if (Engine.service != null) 0xFF0ECB81.toInt() else 0xFFF6465D.toInt())
+        val (s, tot) = Engine.todayStats()
+        val rate = if (tot > 0) s * 100 / tot else 100
         findViewById<TextView>(R.id.tvBMode).text = if (Engine.fast) "FAST" else "SAFE"
-        findViewById<TextView>(R.id.tvBToday).text = "TODAY ${Engine.targets.sumOf { it.today }}"
+        findViewById<TextView>(R.id.tvBToday).text = "TODAY $s · ${rate}%"
         findViewById<Button>(R.id.btnMode).text =
             if (Engine.fast) "MODE: FAST" else "MODE: SAFE"
     }
+
+    private fun Int.sp2Float() = this.toFloat()
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
 }
