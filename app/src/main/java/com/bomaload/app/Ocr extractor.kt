@@ -52,7 +52,7 @@ object OcrExtractor {
     }
 
     private fun base(b: Bitmap): Bitmap =
-        if (b.width < 1600) scale(b, 1600f / b.width) else b
+        if (b.width < 1800) scale(b, 1800f / b.width) else b
 
     private fun scale(b: Bitmap, f: Float): Bitmap =
         Bitmap.createScaledBitmap(b, (b.width * f).toInt(), (b.height * f).toInt(), true)
@@ -68,7 +68,7 @@ object OcrExtractor {
         val xs = listOf(0, (b.width - tw) / 2, b.width - tw)
         val ys = listOf(0, (b.height - th) / 2, b.height - th)
         val out = mutableListOf<Bitmap>()
-        for (y in ys) for (x in xs) out.add(scale(Bitmap.createBitmap(b, x, y, tw, th), 2f))
+        for (y in ys) for (x in xs) out.add(scale(Bitmap.createBitmap(b, x, y, tw, th), 2.5f))
         return out
     }
 
