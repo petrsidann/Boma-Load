@@ -19,7 +19,7 @@ object Engine {
     val queue = mutableListOf<PinItem>()
     val review = mutableListOf<String>()
     val targets = mutableListOf<Target>()
-    var speed = 1
+    var fast = false
     var running = false
     var appCtx: Context? = null
     var service: UssdAutomationService? = null
@@ -27,14 +27,26 @@ object Engine {
     var log: ((String) -> Unit)? = null
     var balance = ""
 
+    const val SAFE_GAP_MS = 2500L
+    const val FAST_GAP_MS = 250L
     const val COOLDOWN_MS = 10_000L
+    const val TIMEOUT_MS = 8000L
+    const val MAX_CONN_RETRIES = 3
     const val MAX_SWEEPS = 2
-    const val MAX_CONN_RETRIES = 5
 
-    fun speedName() = listOf("SAFE", "BALANCED", "FAST", "MAX")[speed - 1]
-    private fun gapMs() = listOf(2500L, 1200L, 500L, 150L)[speed - 1]
-    private fun nextMs() = listOf(800L, 400L, 200L, 100L)[speed - 1]
-    private fun timeoutMs() = if (speed == 4) 4000L else 6000L
+    private var avgSafe = 4.0
+    private var avgFast = 2.0
+
+    fun speedName() = if (fast) "FAST" else "SAFE"
+    private fun gapMs() = if (fast) FAST_GAP_MS else SAFE_GAP_MS
+    private fun nextMs() = if (fast) FAST_GAP_MS else 800L
+
+    fun avgSecPub(fastMode: Boolean) = (if (fastMode) avgFast else avgSafe).toLong().coerceAtLeast(1L)
+    fun estimateSec(pending: Int, fastMode: Boolean): Long {
+        val per = if (fastMode) avgFast else avgSafe
+        val cool = if (fastMode) 0 else (pending / 10) * 10
+        return (pending * per).toLong() + cool
+    }
 
     private val handler = Handler(Looper.getMainLooper())
     private var current: PinItem? = null
@@ -65,7 +77,9 @@ object Engine {
             val p = line.split("|")
             if (p.size == 2 && p[0].length >= 10) targets.add(Target(p[0], p[0], p[1] == "1"))
         }
-        speed = sp.getInt("speed", if (sp.getBoolean("turbo", false)) 3 else 1).coerceIn(1, 4)
+        fast = sp.getBoolean("turbo", false)
+        avgSafe = sp.getFloat("avgSafe", 4f).toDouble()
+        avgFast = sp.getFloat("avgFast", 2f).toDouble()
         queue.clear()
         (sp.getString("queue", "") ?: "").split("\n").forEach { line ->
             val p = line.split("|")
@@ -81,7 +95,9 @@ object Engine {
             .putString("queue", queue.joinToString("\n") { "${it.pin}|${it.status}" })
             .putString("targets", targets.filter { it.number0 != "SELF" }
                 .joinToString("\n") { "${it.number0}|${if (it.enabled) "1" else "0" }" })
-            .putInt("speed", speed)
+            .putBoolean("turbo", fast)
+            .putFloat("avgSafe", avgSafe.toFloat())
+            .putFloat("avgFast", avgFast.toFloat())
             .apply()
     }
 
@@ -138,14 +154,16 @@ object Engine {
     private fun isRetryable(note: String) =
         listOf("timeout", "connection", "mmi", "network", "no confirmation").any { note.contains(it, true) }
 
-    fun todayStats(): Pair<Int, Int> {
+    fun todayLoaded() = targets.sumOf { it.today }
+    fun todayFails(): Int {
         val cal = java.util.Calendar.getInstance()
         cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
         cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
         val t0 = cal.timeInMillis
-        val todays = history.filter { (it.split("|").firstOrNull()?.toLongOrNull() ?: 0L) >= t0 }
-        val s = todays.count { it.contains("|SUCCESS|") }
-        val f = todays.count { it.contains("|FAILED|") }
+        return history.count { (it.split("|").firstOrNull()?.toLongOrNull() ?: 0L) >= t0 && it.contains("|FAILED|") }
+    }
+    fun todayStats(): Pair<Int, Int> {
+        val s = todayLoaded(); val f = todayFails()
         return s to (s + f)
     }
 
@@ -159,7 +177,7 @@ object Engine {
         running = true; consecFails = 0; successRun = 0; sweep = 0; cooldownUntil = 0L
         batchStartAt = System.currentTimeMillis()
         val n = queue.count { it.status == "PENDING" }
-        log?.invoke("START: $n voucher(s), speed ${speed}/4 ${speedName()}")
+        log?.invoke("START: $n voucher(s), mode ${speedName()}")
         logPlan(n)
         next()
     }
@@ -198,7 +216,7 @@ object Engine {
                 log?.invoke("BAL: no response")
                 service?.clickButton("OK")
             }
-        }, timeoutMs())
+        }, TIMEOUT_MS)
     }
 
     private fun complete() {
@@ -225,8 +243,8 @@ object Engine {
             .minWithOrNull(compareBy<Target> { it.today }.thenBy { it.nextAt })
         if (t == null) { complete(); return }
         val now = System.currentTimeMillis()
-        val pace = if (speed >= 3) 0L else maxOf(0L, t.nextAt - now)
-        val cool = if (speed >= 3) 0L else maxOf(0L, cooldownUntil - now)
+        val pace = if (fast) 0L else maxOf(0L, t.nextAt - now)
+        val cool = if (fast) 0L else maxOf(0L, cooldownUntil - now)
         val wait = maxOf(pace, cool)
         if (cool > 0) log?.invoke("COOLDOWN: ${cool / 1000}s")
         handler.postDelayed({ if (running) send(item, t) }, wait)
@@ -240,7 +258,7 @@ object Engine {
         t.nextAt = System.currentTimeMillis() + gapMs()
         ui?.invoke()
         dialAt = System.currentTimeMillis()
-        graceUntil = dialAt + 500L
+        graceUntil = dialAt + 400L
         service?.clickButton("OK")
         log?.invoke("DIAL ••••${item.pin.takeLast(4)} -> ${t.label}")
         val code = if (t.number0 == "SELF") "*141*${item.pin}#" else "*141*${item.pin}*${t.number0}*#"
@@ -252,7 +270,7 @@ object Engine {
         pendingTimeout?.let { handler.removeCallbacks(it) }
         val r = Runnable {
             if (!decided && current == item && running && phase == "TOPUP") {
-                if (item.timeouts < 2) {
+                if (item.timeouts < 1) {
                     item.timeouts++; decided = true; item.status = "PENDING"
                     log?.invoke("RETRY ••••${item.pin.takeLast(4)} (no response)")
                     handler.postDelayed({ if (running) next() }, 300)
@@ -262,7 +280,7 @@ object Engine {
             }
         }
         pendingTimeout = r
-        handler.postDelayed(r, timeoutMs())
+        handler.postDelayed(r, TIMEOUT_MS)
     }
 
     private fun goNext() = handler.postDelayed({ if (running) next() }, nextMs())
@@ -275,7 +293,8 @@ object Engine {
     }
 
     private fun doubleOk() = handler.postDelayed({ service?.clickButton("OK") }, 250)
-    private fun secs() = String.format("%.1fs", (System.currentTimeMillis() - dialAt) / 1000.0)
+    private fun secs() = (System.currentTimeMillis() - dialAt) / 1000.0
+    private fun secsStr() = String.format("%.1fs", secs())
 
     fun onUssdText(text: String) {
         val t = text.lowercase()
@@ -295,7 +314,7 @@ object Engine {
         if (!running) return
         if (System.currentTimeMillis() < graceUntil) return
         val now = System.currentTimeMillis()
-        if (t == lastText && now - lastTextAt < 2500) return
+        if (t == lastText && now - lastTextAt < 1200) return
         lastText = t; lastTextAt = now
 
         val marker = t.contains("safaricom message") || t.contains("kindly wait") ||
@@ -310,7 +329,9 @@ object Engine {
         val item = current ?: return
 
         if (t.contains("kindly wait") || t.contains("processing")) {
-            armTimeout(item)
+            decided = true
+            ok(item, "accepted - processing")
+            service?.clickButton("OK"); doubleOk(); goNext()
             return
         }
 
@@ -344,26 +365,28 @@ object Engine {
     }
 
     private fun ok(item: PinItem, m: String) {
-        item.status = "SUCCESS"; item.note = m
+        item.status = "SUCCESS"; item.note = "$m (${secsStr()})"
         vault.add(item.pin)
         targets.firstOrNull { it.label == item.target }?.let { it.today++ }
-        history.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|SUCCESS|${m.replace("|", "/")}")
+        history.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|SUCCESS|${m.replace("|", "/")} (${secsStr()})")
         consecFails = 0
         successRun++
-        if (speed == 1 && successRun % 10 == 0) {
+        val s = secs()
+        if (fast) avgFast = avgFast * 0.7 + s * 0.3 else avgSafe = avgSafe * 0.7 + s * 0.3
+        if (!fast && successRun % 10 == 0) {
             cooldownUntil = System.currentTimeMillis() + COOLDOWN_MS
             log?.invoke("COOLDOWN: 10 loaded - 10s rest")
         }
-        log?.invoke("OK ••••${item.pin.takeLast(4)} -> ${item.target} - $m (${secs()})")
+        log?.invoke("OK ••••${item.pin.takeLast(4)} -> ${item.target} - $m (${secsStr()})")
         tick()
         save(); ui?.invoke()
     }
 
     private fun fail(item: PinItem, m: String) {
-        item.status = "FAILED"; item.note = m
-        history.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|FAILED|${m.replace("|", "/")}")
+        item.status = "FAILED"; item.note = "$m (${secsStr()})"
+        history.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|FAILED|${m.replace("|", "/")} (${secsStr()})")
         consecFails++
-        log?.invoke("FAIL ••••${item.pin.takeLast(4)} -> ${item.target} - $m (${secs()})")
+        log?.invoke("FAIL ••••${item.pin.takeLast(4)} -> ${item.target} - $m (${secsStr()})")
         if (consecFails >= 3) {
             log?.invoke("HALT: 3 fails in a row - rest that line")
             stop()
