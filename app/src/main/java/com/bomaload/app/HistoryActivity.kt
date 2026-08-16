@@ -2,10 +2,8 @@ package com.bomaload.app
 
 import android.content.Intent
 import android.os.Bundle
-import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -78,7 +76,7 @@ class HistoryActivity : AppCompatActivity() {
             card.layoutParams = lp
             card.setPadding(16, 12, 16, 12)
 
-            if (p.size == 4) { // vault row
+            if (p.size == 4) {
                 val t1 = TextView(this)
                 t1.text = "•••• ${p[1].takeLast(4)}   (tap to remove)"
                 t1.setTextColor(0xFFEAECEF.toInt()); t1.textSize = 12f
