@@ -86,10 +86,9 @@ class MainActivity : AppCompatActivity() {
             if (n0 == null) toast("Enter a valid number") else { Engine.addTarget(n0); et.text.clear() }
         }
         findViewById<Button>(R.id.btnMode).setOnClickListener {
-            Engine.speed = Engine.speed % 4 + 1
+            Engine.fast = !Engine.fast
             Engine.save(); render()
-            toast("Speed ${Engine.speed}/4 ${Engine.speedName()}" +
-                    if (Engine.speed == 4) " - maximum risk" else "")
+            toast(if (Engine.fast) "FAST: maximum speed, no breaks" else "SAFE: 2.5s gap + 10s rest per 10")
         }
         findViewById<Button>(R.id.btnRequeue).setOnClickListener {
             toast("${Engine.requeueUnloaded()} re-queued")
@@ -194,6 +193,12 @@ class MainActivity : AppCompatActivity() {
                     " [skipped: " + c.usedPins.joinToString(",") { "••••${it.takeLast(4)}" } + "]" else ""
                 Engine.log?.invoke("IMG: ${c.new} new, ${c.used} before$skipped, ${r.review.size} review")
                 if (r.expired) toast("WARN: expired card detected")
+                val pend = Engine.queue.count { it.status == "PENDING" }
+                if (pend > 0) {
+                    val es = Engine.estimateSec(pend, false)
+                    val ef = Engine.estimateSec(pend, true)
+                    Engine.log?.invoke("ESTIMATE: SAFE ~${es}s · FAST ~${ef}s for $pend pin(s)")
+                }
                 when {
                     expected > 0 && found < expected ->
                         toast("READ $found/$expected - ${c.new} new, ${c.used} before$skipped")
@@ -272,9 +277,7 @@ class MainActivity : AppCompatActivity() {
         val done = Engine.queue.count { it.status == "SUCCESS" || it.status == "FAILED" }
         val pend = Engine.queue.count { it.status == "PENDING" }
         findViewById<ProgressBar>(R.id.pb).progress = if (total > 0) done * 100 / total else 0
-        val act = maxOf(1, Engine.targets.count { it.enabled })
-        val perPin = (listOf(5L, 4L, 3L, 2L)[Engine.speed - 1] / act) + 1L
-        val eta = if (Engine.running && pend > 0) pend * perPin else 0
+        val eta = if (Engine.running && pend > 0) Engine.estimateSec(pend, Engine.fast) else 0
         findViewById<TextView>(R.id.tvProgress).text =
             "$done of $total processed" + if (eta > 0) "  ·  ~${eta}s left" else ""
 
@@ -285,10 +288,10 @@ class MainActivity : AppCompatActivity() {
         rd.setTextColor(if (Engine.service != null) 0xFF0ECB81.toInt() else 0xFFF6465D.toInt())
         val (s, tot) = Engine.todayStats()
         val rate = if (tot > 0) s * 100 / tot else 100
-        findViewById<TextView>(R.id.tvBMode).text = "${Engine.speed}/4 ${Engine.speedName()}"
+        findViewById<TextView>(R.id.tvBMode).text = Engine.speedName()
         findViewById<TextView>(R.id.tvBToday).text = "TODAY $s · ${rate}%"
         findViewById<Button>(R.id.btnMode).text =
-            "SPEED ${Engine.speed}/4 · ${Engine.speedName()}"
+            if (Engine.fast) "MODE: FAST" else "MODE: SAFE"
     }
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
