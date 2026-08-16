@@ -19,7 +19,7 @@ object Engine {
     val queue = mutableListOf<PinItem>()
     val review = mutableListOf<String>()
     val targets = mutableListOf<Target>()
-    var fast = false
+    var speed = 1
     var running = false
     var appCtx: Context? = null
     var service: UssdAutomationService? = null
@@ -27,13 +27,14 @@ object Engine {
     var log: ((String) -> Unit)? = null
     var balance = ""
 
-    const val SAFE_GAP_MS = 2500L
-    const val FAST_GAP_MS = 200L
     const val COOLDOWN_MS = 10_000L
-    const val TIMEOUT_MS = 6000L
-    const val MAX_CONN_RETRIES = 3
-    const val MAX_TIMEOUT_RETRIES = 2
     const val MAX_SWEEPS = 2
+    const val MAX_CONN_RETRIES = 5
+
+    fun speedName() = listOf("SAFE", "BALANCED", "FAST", "MAX")[speed - 1]
+    private fun gapMs() = listOf(2500L, 1200L, 500L, 150L)[speed - 1]
+    private fun nextMs() = listOf(800L, 400L, 200L, 100L)[speed - 1]
+    private fun timeoutMs() = if (speed == 4) 4000L else 6000L
 
     private val handler = Handler(Looper.getMainLooper())
     private var current: PinItem? = null
@@ -44,7 +45,11 @@ object Engine {
     private var sweep = 0
     private var cooldownUntil = 0L
     private var dialAt = 0L
+    private var graceUntil = 0L
+    private var lastText = ""
+    private var lastTextAt = 0L
     private var batchStartAt = 0L
+    private var pendingTimeout: Runnable? = null
     private val vault = mutableSetOf<String>()
     private val history = mutableListOf<String>()
 
@@ -60,7 +65,7 @@ object Engine {
             val p = line.split("|")
             if (p.size == 2 && p[0].length >= 10) targets.add(Target(p[0], p[0], p[1] == "1"))
         }
-        fast = sp.getBoolean("turbo", false)
+        speed = sp.getInt("speed", if (sp.getBoolean("turbo", false)) 3 else 1).coerceIn(1, 4)
         queue.clear()
         (sp.getString("queue", "") ?: "").split("\n").forEach { line ->
             val p = line.split("|")
@@ -76,7 +81,7 @@ object Engine {
             .putString("queue", queue.joinToString("\n") { "${it.pin}|${it.status}" })
             .putString("targets", targets.filter { it.number0 != "SELF" }
                 .joinToString("\n") { "${it.number0}|${if (it.enabled) "1" else "0" }" })
-            .putBoolean("turbo", fast)
+            .putInt("speed", speed)
             .apply()
     }
 
@@ -129,7 +134,7 @@ object Engine {
     }
 
     private fun isDefinitive(note: String) =
-        listOf("been used", "already used", "invalid", "does not exist", "expired").any { note.contains(it, true) }
+        listOf("invalid", "does not exist", "expired", "wrong pin").any { note.contains(it, true) }
     private fun isRetryable(note: String) =
         listOf("timeout", "connection", "mmi", "network", "no confirmation").any { note.contains(it, true) }
 
@@ -154,7 +159,7 @@ object Engine {
         running = true; consecFails = 0; successRun = 0; sweep = 0; cooldownUntil = 0L
         batchStartAt = System.currentTimeMillis()
         val n = queue.count { it.status == "PENDING" }
-        log?.invoke("START: $n voucher(s), mode ${if (fast) "FAST" else "SAFE"}")
+        log?.invoke("START: $n voucher(s), speed ${speed}/4 ${speedName()}")
         logPlan(n)
         next()
     }
@@ -193,7 +198,7 @@ object Engine {
                 log?.invoke("BAL: no response")
                 service?.clickButton("OK")
             }
-        }, TIMEOUT_MS)
+        }, timeoutMs())
     }
 
     private fun complete() {
@@ -220,8 +225,8 @@ object Engine {
             .minWithOrNull(compareBy<Target> { it.today }.thenBy { it.nextAt })
         if (t == null) { complete(); return }
         val now = System.currentTimeMillis()
-        val pace = if (fast) 0L else maxOf(0L, t.nextAt - now)
-        val cool = if (fast) 0L else maxOf(0L, cooldownUntil - now)
+        val pace = if (speed >= 3) 0L else maxOf(0L, t.nextAt - now)
+        val cool = if (speed >= 3) 0L else maxOf(0L, cooldownUntil - now)
         val wait = maxOf(pace, cool)
         if (cool > 0) log?.invoke("COOLDOWN: ${cool / 1000}s")
         handler.postDelayed({ if (running) send(item, t) }, wait)
@@ -232,15 +237,22 @@ object Engine {
         phase = "TOPUP"
         current = item; decided = false
         item.status = "LOADING"; item.target = t.label
-        t.today++; t.nextAt = System.currentTimeMillis() + if (fast) FAST_GAP_MS else SAFE_GAP_MS
+        t.nextAt = System.currentTimeMillis() + gapMs()
         ui?.invoke()
         dialAt = System.currentTimeMillis()
+        graceUntil = dialAt + 500L
+        service?.clickButton("OK")
         log?.invoke("DIAL ••••${item.pin.takeLast(4)} -> ${t.label}")
         val code = if (t.number0 == "SELF") "*141*${item.pin}#" else "*141*${item.pin}*${t.number0}*#"
         dial(code)
-        handler.postDelayed({
+        armTimeout(item)
+    }
+
+    private fun armTimeout(item: PinItem) {
+        pendingTimeout?.let { handler.removeCallbacks(it) }
+        val r = Runnable {
             if (!decided && current == item && running && phase == "TOPUP") {
-                if (item.timeouts < MAX_TIMEOUT_RETRIES) {
+                if (item.timeouts < 2) {
                     item.timeouts++; decided = true; item.status = "PENDING"
                     log?.invoke("RETRY ••••${item.pin.takeLast(4)} (no response)")
                     handler.postDelayed({ if (running) next() }, 300)
@@ -248,10 +260,12 @@ object Engine {
                     fail(item, "No confirmation (timeout)"); goNext()
                 }
             }
-        }, TIMEOUT_MS)
+        }
+        pendingTimeout = r
+        handler.postDelayed(r, timeoutMs())
     }
 
-    private fun goNext() = handler.postDelayed({ if (running) next() }, if (fast) FAST_GAP_MS else 500L)
+    private fun goNext() = handler.postDelayed({ if (running) next() }, nextMs())
 
     private fun dial(code: String) {
         val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:" + code.replace("#", "%23")))
@@ -279,6 +293,11 @@ object Engine {
         }
 
         if (!running) return
+        if (System.currentTimeMillis() < graceUntil) return
+        val now = System.currentTimeMillis()
+        if (t == lastText && now - lastTextAt < 2500) return
+        lastText = t; lastTextAt = now
+
         val marker = t.contains("safaricom message") || t.contains("kindly wait") ||
                 t.contains("msisdn") || t.contains("ussd") || t.contains("voucher") ||
                 t.contains("top up") || t.contains("the voucher")
@@ -288,16 +307,13 @@ object Engine {
             service?.respondWithNumber(current?.target ?: ""); return
         }
         if (decided) { service?.clickButton("OK"); return }
+        val item = current ?: return
 
         if (t.contains("kindly wait") || t.contains("processing")) {
-            val item = current ?: return
-            decided = true
-            ok(item, "accepted - processing")
-            service?.clickButton("OK"); doubleOk(); goNext()
+            armTimeout(item)
             return
         }
 
-        val item = current ?: return
         when {
             listOf("connection problem", "invalid mmi", "network error", "try again")
                 .any { t.contains(it) } -> {
@@ -308,8 +324,14 @@ object Engine {
                     handler.postDelayed({ if (running) next() }, 1000)
                 } else { decided = true; fail(item, short(t)); service?.clickButton("OK"); doubleOk(); goNext() }
             }
-            listOf("been used", "already used", "invalid", "expired", "not valid", "wrong pin",
-                "does not exist", "error from application", "failed")
+            listOf("been used", "already used")
+                .any { t.contains(it) } -> {
+                decided = true
+                ok(item, "already used = loaded earlier")
+                service?.clickButton("OK"); doubleOk(); goNext()
+            }
+            listOf("invalid", "expired", "not valid", "wrong pin",
+                "does not exist", "error from application")
                 .any { t.contains(it) } -> {
                 decided = true; fail(item, short(t)); service?.clickButton("OK"); doubleOk(); goNext()
             }
@@ -324,10 +346,11 @@ object Engine {
     private fun ok(item: PinItem, m: String) {
         item.status = "SUCCESS"; item.note = m
         vault.add(item.pin)
+        targets.firstOrNull { it.label == item.target }?.let { it.today++ }
         history.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|SUCCESS|${m.replace("|", "/")}")
         consecFails = 0
         successRun++
-        if (!fast && successRun % 10 == 0) {
+        if (speed == 1 && successRun % 10 == 0) {
             cooldownUntil = System.currentTimeMillis() + COOLDOWN_MS
             log?.invoke("COOLDOWN: 10 loaded - 10s rest")
         }
