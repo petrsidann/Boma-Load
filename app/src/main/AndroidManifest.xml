@@ -19,6 +19,7 @@
         </activity>
         <activity android:name=".MainActivity" android:exported="true" />
         <activity android:name=".HistoryActivity" android:exported="false" />
+        <activity android:name=".UpdateActivity" android:exported="false" />
         <service
             android:name=".UssdAutomationService"
             android:exported="false"
