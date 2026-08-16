@@ -31,8 +31,6 @@ class MainActivity : AppCompatActivity() {
     private val REQ_CAM = 2
     private var lastCamFile: File? = null
 
-    private val UPDATE_URL = "https://github.com/petrsidann/Boma-Load/releases/latest/download/app-debug.apk"
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -88,8 +86,10 @@ class MainActivity : AppCompatActivity() {
             if (n0 == null) toast("Enter a valid number") else { Engine.addTarget(n0); et.text.clear() }
         }
         findViewById<Button>(R.id.btnMode).setOnClickListener {
-            Engine.fast = !Engine.fast; Engine.save(); render()
-            toast(if (Engine.fast) "FAST: lightning mode" else "SAFE: 2.5s gap + 10s rest per 10")
+            Engine.speed = Engine.speed % 4 + 1
+            Engine.save(); render()
+            toast("Speed ${Engine.speed}/4 ${Engine.speedName()}" +
+                    if (Engine.speed == 4) " - maximum risk" else "")
         }
         findViewById<Button>(R.id.btnRequeue).setOnClickListener {
             toast("${Engine.requeueUnloaded()} re-queued")
@@ -98,7 +98,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnStart).setOnClickListener { startAutomation() }
         findViewById<Button>(R.id.btnStop).setOnClickListener { Engine.stop() }
         findViewById<Button>(R.id.btnBalance).setOnClickListener { Engine.checkBalance() }
-        findViewById<Button>(R.id.btnUpdate).setOnClickListener { checkUpdate() }
+        findViewById<Button>(R.id.btnUpdate).setOnClickListener { startActivity(Intent(this, UpdateActivity::class.java)) }
 
         entranceAnimation()
         render()
@@ -128,24 +128,6 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); return
         }
         Engine.start()
-    }
-
-    private fun checkUpdate() {
-        toast("Checking for update...")
-        Thread {
-            try {
-                val conn = java.net.URL(UPDATE_URL).openConnection() as java.net.HttpURLConnection
-                conn.instanceFollowRedirects = true; conn.connectTimeout = 15000
-                val f = File(cacheDir, "update.apk")
-                conn.inputStream.use { ins -> f.outputStream().use { outs -> ins.copyTo(outs) } }
-                conn.disconnect()
-                val uri = FileProvider.getUriForFile(this, "$packageName.fp", f)
-                startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,
-                    "application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
-            } catch (e: Exception) {
-                runOnUiThread { toast("No update found - run workflow first / check internet") }
-            }
-        }.start()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -229,7 +211,7 @@ class MainActivity : AppCompatActivity() {
             val cb = CheckBox(this)
             cb.isChecked = t.enabled
             cb.setTextColor(0xFFEAECEF.toInt())
-            cb.text = "${t.label}   today: ${t.today}"
+            cb.text = "${t.label}   loaded today: ${t.today}"
             cb.setOnCheckedChangeListener { _, on -> t.enabled = on; Engine.save() }
             cb.setOnLongClickListener {
                 if (t.number0 == "SELF") toast("Default target - untick to disable")
@@ -291,7 +273,7 @@ class MainActivity : AppCompatActivity() {
         val pend = Engine.queue.count { it.status == "PENDING" }
         findViewById<ProgressBar>(R.id.pb).progress = if (total > 0) done * 100 / total else 0
         val act = maxOf(1, Engine.targets.count { it.enabled })
-        val perPin = if (Engine.fast) 3L else 2500L / act + 2L
+        val perPin = (listOf(5L, 4L, 3L, 2L)[Engine.speed - 1] / act) + 1L
         val eta = if (Engine.running && pend > 0) pend * perPin else 0
         findViewById<TextView>(R.id.tvProgress).text =
             "$done of $total processed" + if (eta > 0) "  ·  ~${eta}s left" else ""
@@ -303,10 +285,10 @@ class MainActivity : AppCompatActivity() {
         rd.setTextColor(if (Engine.service != null) 0xFF0ECB81.toInt() else 0xFFF6465D.toInt())
         val (s, tot) = Engine.todayStats()
         val rate = if (tot > 0) s * 100 / tot else 100
-        findViewById<TextView>(R.id.tvBMode).text = if (Engine.fast) "FAST" else "SAFE"
+        findViewById<TextView>(R.id.tvBMode).text = "${Engine.speed}/4 ${Engine.speedName()}"
         findViewById<TextView>(R.id.tvBToday).text = "TODAY $s · ${rate}%"
         findViewById<Button>(R.id.btnMode).text =
-            if (Engine.fast) "MODE: FAST" else "MODE: SAFE"
+            "SPEED ${Engine.speed}/4 · ${Engine.speedName()}"
     }
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
