@@ -19,11 +19,14 @@ jobs:
           unzip -q /tmp/gradle.zip -d $HOME
       - name: Build debug APK
         run: $HOME/gradle-8.3/bin/gradle assembleDebug --no-daemon
-      - name: Publish latest release
+      - name: Read version
+        id: v
+        run: echo "code=$(grep -oP 'versionCode \K[0-9]+' app/build.gradle)" >> $GITHUB_OUTPUT
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: Boma Load latest
+          tag_name: v${{ steps.v.outputs.code }}
+          name: Boma Load v${{ steps.v.outputs.code }}
           files: app/build/outputs/apk/debug/app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
