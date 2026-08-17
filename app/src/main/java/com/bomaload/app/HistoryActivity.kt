@@ -2,6 +2,7 @@ package com.bomaload.app
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -14,6 +15,8 @@ import java.util.Locale
 class HistoryActivity : AppCompatActivity() {
 
     private var mode = "ALL"
+    private var selecting = false
+    private val selected = mutableSetOf<Int>()
     private lateinit var list: LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,17 +25,25 @@ class HistoryActivity : AppCompatActivity() {
         Engine.init(applicationContext)
         list = findViewById(R.id.llHistory)
 
-        findViewById<Button>(R.id.bAll).setOnClickListener { mode = "ALL"; render() }
-        findViewById<Button>(R.id.bOk).setOnClickListener { mode = "OK"; render() }
-        findViewById<Button>(R.id.bFail).setOnClickListener { mode = "FAIL"; render() }
-        findViewById<Button>(R.id.bDead).setOnClickListener { mode = "DEAD"; render() }
-        findViewById<Button>(R.id.bVault).setOnClickListener { mode = "VAULT"; render() }
+        findViewById<Button>(R.id.bAll).setOnClickListener { mode = "ALL"; selected.clear(); render() }
+        findViewById<Button>(R.id.bOk).setOnClickListener { mode = "OK"; selected.clear(); render() }
+        findViewById<Button>(R.id.bFail).setOnClickListener { mode = "FAIL"; selected.clear(); render() }
+        findViewById<Button>(R.id.bDead).setOnClickListener { mode = "DEAD"; selected.clear(); render() }
+        findViewById<Button>(R.id.bVault).setOnClickListener { mode = "VAULT"; selected.clear(); render() }
         findViewById<Button>(R.id.bBack).setOnClickListener { finish() }
         findViewById<Button>(R.id.bShare).setOnClickListener { share() }
+        findViewById<Button>(R.id.bSelect).setOnClickListener {
+            selecting = !selecting; selected.clear(); render()
+        }
+        findViewById<Button>(R.id.bSelAll).setOnClickListener {
+            selected.clear()
+            for (i in rows().indices) selected.add(i)
+            render()
+        }
         findViewById<Button>(R.id.bClear).setOnClickListener {
             if (mode == "VAULT") { Engine.vaultClear(); toast("Vault cleared") }
             else { Engine.clearHistory(); toast("History cleared") }
-            render()
+            selected.clear(); render()
         }
         findViewById<Button>(R.id.bRetry).setOnClickListener {
             toast("${Engine.retryFailed()} failed pin(s) re-queued")
@@ -63,34 +74,44 @@ class HistoryActivity : AppCompatActivity() {
     private fun render() {
         val (s, tot) = Engine.todayStats()
         val rate = if (tot > 0) s * 100 / tot else 100
-        findViewById<TextView>(R.id.tvScore).text =
-            "TODAY: $s loaded of $tot attempts · $rate% success"
+        val score = findViewById<TextView>(R.id.tvScore)
+        score.text = if (selecting) "${selected.size} selected"
+        else "TODAY: $s loaded of $tot attempts · $rate% success"
+
+        findViewById<Button>(R.id.bSelect).text = if (selecting) "DONE" else "SELECT"
+        findViewById<Button>(R.id.bSelAll).visibility = if (selecting) View.VISIBLE else View.GONE
 
         list.removeAllViews()
         val fmt = SimpleDateFormat("HH:mm dd/MM", Locale.getDefault())
-        rows().forEach { p ->
+        val rws = rows()
+        rws.forEachIndexed { idx, p ->
             val card = LinearLayout(this)
             card.orientation = LinearLayout.VERTICAL
             card.setBackgroundResource(R.drawable.btn_bg)
             val lp = LinearLayout.LayoutParams(-1, -2); lp.bottomMargin = 8
             card.layoutParams = lp
             card.setPadding(16, 12, 16, 12)
+            if (selecting && selected.contains(idx)) card.alpha = 0.55f else card.alpha = 1f
 
             if (p.size == 4) {
                 val t1 = TextView(this)
-                t1.text = "•••• ${p[1].takeLast(4)}   (tap to remove)"
+                t1.text = (if (selecting && selected.contains(idx)) "✓ " else "") +
+                        "•••• ${p[1].takeLast(4)}   (tap to remove)"
                 t1.setTextColor(0xFFEAECEF.toInt()); t1.textSize = 12f
                 card.addView(t1)
                 val t2 = TextView(this)
                 t2.text = p[1]
                 t2.setTextColor(0xFF848E9C.toInt()); t2.textSize = 10f
                 card.addView(t2)
-                card.setOnClickListener { Engine.vaultRemove(p[1]); toast("Removed from vault"); render() }
+                card.setOnClickListener {
+                    if (selecting) { toggle(idx) } else { Engine.vaultRemove(p[1]); toast("Removed from vault"); render() }
+                }
             } else {
                 val row1 = LinearLayout(this)
                 row1.orientation = LinearLayout.HORIZONTAL
                 val time = TextView(this)
-                time.text = fmt.format(Date(p[0].toLongOrNull() ?: 0L))
+                time.text = (if (selecting && selected.contains(idx)) "✓ " else "") +
+                        fmt.format(Date(p[0].toLongOrNull() ?: 0L))
                 time.setTextColor(0xFF848E9C.toInt()); time.textSize = 10f
                 time.layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
                 row1.addView(time)
@@ -109,6 +130,7 @@ class HistoryActivity : AppCompatActivity() {
                 t3.text = p[4]
                 t3.setTextColor(0xFF848E9C.toInt()); t3.textSize = 10f
                 card.addView(t3)
+                card.setOnClickListener { if (selecting) toggle(idx) }
             }
             list.addView(card)
         }
@@ -121,10 +143,17 @@ class HistoryActivity : AppCompatActivity() {
         }
     }
 
+    private fun toggle(idx: Int) {
+        if (selected.contains(idx)) selected.remove(idx) else selected.add(idx)
+        render()
+    }
+
     private fun share() {
         val sb = StringBuilder("BOMA LOAD report ($mode)\n")
         val fmt = SimpleDateFormat("HH:mm dd/MM", Locale.getDefault())
-        rows().forEach { p ->
+        val rws = rows()
+        rws.forEachIndexed { idx, p ->
+            if (selecting && !selected.contains(idx)) return@forEachIndexed
             if (p.size == 4) sb.append("USED ••••${p[1].takeLast(4)}\n")
             else sb.append("${fmt.format(Date(p[0].toLongOrNull() ?: 0L))} ••••${p[1].takeLast(4)} -> ${p[2]} [${p[3]}] ${p[4]}\n")
         }
