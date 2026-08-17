@@ -30,12 +30,12 @@ object Engine {
     const val SAFE_GAP_MS = 2500L
     const val FAST_GAP_MS = 250L
     const val COOLDOWN_MS = 10_000L
-    const val TIMEOUT_MS = 8000L
+    const val TIMEOUT_MS = 10_000L
     const val MAX_CONN_RETRIES = 3
     const val MAX_SWEEPS = 2
 
     private var avgSafe = 4.0
-    private var avgFast = 2.0
+    private var avgFast = 3.0
 
     fun speedName() = if (fast) "FAST" else "SAFE"
     private fun gapMs() = if (fast) FAST_GAP_MS else SAFE_GAP_MS
@@ -65,6 +65,13 @@ object Engine {
     private val vault = mutableSetOf<String>()
     private val history = mutableListOf<String>()
 
+    private fun dayStart(): Long {
+        val cal = java.util.Calendar.getInstance()
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
+    }
+
     fun init(ctx: Context) {
         appCtx = ctx
         val sp = ctx.getSharedPreferences("boma", Context.MODE_PRIVATE)
@@ -79,11 +86,19 @@ object Engine {
         }
         fast = sp.getBoolean("turbo", false)
         avgSafe = sp.getFloat("avgSafe", 4f).toDouble()
-        avgFast = sp.getFloat("avgFast", 2f).toDouble()
+        avgFast = sp.getFloat("avgFast", 3f).toDouble()
         queue.clear()
         (sp.getString("queue", "") ?: "").split("\n").forEach { line ->
             val p = line.split("|")
             if (p.size >= 2 && p[0].length == 16) queue.add(PinItem(p[0], p[1]))
+        }
+        // seed today counters from history (single source of truth)
+        val t0 = dayStart()
+        targets.forEach { t ->
+            t.today = history.count { line ->
+                val p = line.split("|")
+                p.size >= 4 && p[3] == "SUCCESS" && (p[0].toLongOrNull() ?: 0L) >= t0 && p[2] == t.label
+            }
         }
     }
 
@@ -105,6 +120,10 @@ object Engine {
     fun vaultList(): List<String> = vault.toList().sorted()
     fun vaultRemove(p: String) { vault.remove(p); save(); ui?.invoke() }
     fun vaultClear() { vault.clear(); save(); ui?.invoke() }
+
+    fun clearQueue() {
+        if (!running) { queue.clear(); review.clear(); save(); ui?.invoke() }
+    }
 
     fun addPins(list: List<String>): AddResult {
         var new = 0; val usedPins = mutableListOf<String>()
@@ -154,13 +173,19 @@ object Engine {
     private fun isRetryable(note: String) =
         listOf("timeout", "connection", "mmi", "network", "no confirmation").any { note.contains(it, true) }
 
-    fun todayLoaded() = targets.sumOf { it.today }
+    fun todayLoaded(): Int {
+        val t0 = dayStart()
+        return history.count { line ->
+            val p = line.split("|")
+            p.size >= 4 && p[3] == "SUCCESS" && (p[0].toLongOrNull() ?: 0L) >= t0
+        }
+    }
     fun todayFails(): Int {
-        val cal = java.util.Calendar.getInstance()
-        cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
-        cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
-        val t0 = cal.timeInMillis
-        return history.count { (it.split("|").firstOrNull()?.toLongOrNull() ?: 0L) >= t0 && it.contains("|FAILED|") }
+        val t0 = dayStart()
+        return history.count { line ->
+            val p = line.split("|")
+            p.size >= 4 && p[3] == "FAILED" && (p[0].toLongOrNull() ?: 0L) >= t0
+        }
     }
     fun todayStats(): Pair<Int, Int> {
         val s = todayLoaded(); val f = todayFails()
@@ -328,10 +353,9 @@ object Engine {
         if (decided) { service?.clickButton("OK"); return }
         val item = current ?: return
 
+        // TRUTH: kindly wait only extends the wait - it never decides
         if (t.contains("kindly wait") || t.contains("processing")) {
-            decided = true
-            ok(item, "accepted - processing")
-            service?.clickButton("OK"); doubleOk(); goNext()
+            armTimeout(item)
             return
         }
 
