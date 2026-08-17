@@ -93,6 +93,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnRequeue).setOnClickListener {
             toast("${Engine.requeueUnloaded()} re-queued")
         }
+        findViewById<Button>(R.id.btnClearQ).setOnClickListener {
+            Engine.clearQueue()
+            toast("Queue cleared")
+        }
         findViewById<Button>(R.id.btnHistory).setOnClickListener { startActivity(Intent(this, HistoryActivity::class.java)) }
         findViewById<Button>(R.id.btnStart).setOnClickListener { startAutomation() }
         findViewById<Button>(R.id.btnStop).setOnClickListener { Engine.stop() }
@@ -195,9 +199,7 @@ class MainActivity : AppCompatActivity() {
                 if (r.expired) toast("WARN: expired card detected")
                 val pend = Engine.queue.count { it.status == "PENDING" }
                 if (pend > 0) {
-                    val es = Engine.estimateSec(pend, false)
-                    val ef = Engine.estimateSec(pend, true)
-                    Engine.log?.invoke("ESTIMATE: SAFE ~${es}s · FAST ~${ef}s for $pend pin(s)")
+                    Engine.log?.invoke("ESTIMATE: SAFE ~${Engine.estimateSec(pend, false)}s · FAST ~${Engine.estimateSec(pend, true)}s for $pend pin(s)")
                 }
                 when {
                     expected > 0 && found < expected ->
