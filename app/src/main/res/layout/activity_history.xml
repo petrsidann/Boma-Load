@@ -11,7 +11,17 @@
         android:textColor="#0ECB81" android:textSize="12sp" android:layout_marginTop="4dp"/>
 
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:layout_marginTop="12dp">
+        android:orientation="horizontal" android:layout_marginTop="10dp">
+        <Button android:id="@+id/bSelect" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="38dp" android:text="SELECT" android:textSize="10sp"
+            android:background="@drawable/btn_bg" android:textColor="#F0B90B" android:layout_marginEnd="4dp"/>
+        <Button android:id="@+id/bSelAll" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="38dp" android:text="SELECT ALL" android:textSize="10sp"
+            android:background="@drawable/btn_bg" android:textColor="#F0B90B" android:visibility="gone"/>
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:layout_marginTop="8dp">
         <Button android:id="@+id/bAll" android:layout_width="0dp" android:layout_weight="1"
             android:layout_height="38dp" android:text="ALL" android:textSize="10sp"
             android:background="@drawable/btn_bg" android:textColor="#EAECEF" android:layout_marginEnd="4dp"/>
