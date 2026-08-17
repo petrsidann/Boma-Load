@@ -2,6 +2,7 @@ plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
 }
+def hasKey = file("${rootDir}/keystore/boma.jks").exists()
 android {
     namespace 'com.bomaload.app'
     compileSdk 34
@@ -9,8 +10,21 @@ android {
         applicationId "com.bomaload.app"
         minSdk 26
         targetSdk 34
-        versionCode 13
-        versionName "13.0"
+        versionCode 14
+        versionName "14.0"
+    }
+    signingConfigs {
+        boma {
+            storeFile file("${rootDir}/keystore/boma.jks")
+            storePassword "boma1234"
+            keyAlias "boma"
+            keyPassword "boma1234"
+        }
+    }
+    buildTypes {
+        debug {
+            if (hasKey) signingConfig signingConfigs.boma
+        }
     }
     buildFeatures {
         buildConfig true
