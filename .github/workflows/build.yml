@@ -9,6 +9,17 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Ensure signing keystore
+        run: |
+          if [ ! -f keystore/boma.jks ]; then
+            mkdir -p keystore
+            keytool -genkeypair -v -keystore keystore/boma.jks -keyalg RSA -keysize 2048 -validity 10000 -alias boma -storepass boma1234 -keypass boma1234 -dname "CN=Boma"
+            git config user.name "Boma Bot"
+            git config user.email "bot@bomaload.app"
+            git add keystore/boma.jks
+            git commit -m "add permanent signing keystore"
+            git push
+          fi
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
