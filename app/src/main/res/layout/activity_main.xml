@@ -136,9 +136,15 @@
                     android:layout_height="48dp" android:text="STOP" android:textSize="13sp"
                     android:background="@drawable/btn_red" android:textColor="#FFFFFF"/>
             </LinearLayout>
-            <Button android:id="@+id/btnRequeue" android:layout_width="match_parent"
-                android:layout_height="42dp" android:text="RE-QUEUE UNLOADED" android:textSize="11sp"
-                android:background="@drawable/btn_bg" android:textColor="#F0B90B" android:layout_marginTop="8dp"/>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:layout_marginTop="8dp">
+                <Button android:id="@+id/btnRequeue" android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="42dp" android:text="RE-QUEUE UNLOADED" android:textSize="11sp"
+                    android:background="@drawable/btn_bg" android:textColor="#F0B90B" android:layout_marginEnd="6dp"/>
+                <Button android:id="@+id/btnClearQ" android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="42dp" android:text="CLEAR ALL" android:textSize="11sp"
+                    android:background="@drawable/btn_bg" android:textColor="#F6465D"/>
+            </LinearLayout>
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="horizontal" android:layout_marginTop="8dp">
                 <Button android:id="@+id/btnMode" android:layout_width="0dp" android:layout_weight="1"
