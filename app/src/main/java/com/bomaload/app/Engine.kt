@@ -92,7 +92,6 @@ object Engine {
             val p = line.split("|")
             if (p.size >= 2 && p[0].length == 16) queue.add(PinItem(p[0], p[1]))
         }
-        // seed today counters from history (single source of truth)
         val t0 = dayStart()
         targets.forEach { t ->
             t.today = history.count { line ->
@@ -353,8 +352,10 @@ object Engine {
         if (decided) { service?.clickButton("OK"); return }
         val item = current ?: return
 
-        // TRUTH: kindly wait only extends the wait - it never decides
+        // v15: dismiss the kindly-wait popup so the REAL result can appear, but do NOT decide yet
         if (t.contains("kindly wait") || t.contains("processing")) {
+            service?.clickButton("OK")
+            doubleOk()
             armTimeout(item)
             return
         }
