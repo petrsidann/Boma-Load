@@ -31,6 +31,7 @@ object Engine {
     const val FAST_GAP_MS = 250L
     const val COOLDOWN_MS = 10_000L
     const val TIMEOUT_MS = 10_000L
+    const val PROBATION_MS = 5000L
     const val MAX_CONN_RETRIES = 3
     const val MAX_SWEEPS = 2
 
@@ -41,7 +42,6 @@ object Engine {
     private fun gapMs() = if (fast) FAST_GAP_MS else SAFE_GAP_MS
     private fun nextMs() = if (fast) FAST_GAP_MS else 800L
 
-    fun avgSecPub(fastMode: Boolean) = (if (fastMode) avgFast else avgSafe).toLong().coerceAtLeast(1L)
     fun estimateSec(pending: Int, fastMode: Boolean): Long {
         val per = if (fastMode) avgFast else avgSafe
         val cool = if (fastMode) 0 else (pending / 10) * 10
@@ -62,6 +62,7 @@ object Engine {
     private var lastTextAt = 0L
     private var batchStartAt = 0L
     private var pendingTimeout: Runnable? = null
+    private val probation = linkedMapOf<PinItem, Runnable>()
     private val vault = mutableSetOf<String>()
     private val history = mutableListOf<String>()
 
@@ -171,6 +172,8 @@ object Engine {
         listOf("invalid", "does not exist", "expired", "wrong pin").any { note.contains(it, true) }
     private fun isRetryable(note: String) =
         listOf("timeout", "connection", "mmi", "network", "no confirmation").any { note.contains(it, true) }
+    private fun isConnFail(t: String) =
+        listOf("connection problem", "invalid mmi", "network error", "try again").any { t.contains(it) }
 
     fun todayLoaded(): Int {
         val t0 = dayStart()
@@ -349,20 +352,52 @@ object Engine {
         if (t.contains("enter the number") || (t.contains("msisdn") && t.contains("back"))) {
             service?.respondWithNumber(current?.target ?: ""); return
         }
+
+        // PROBATION GUARD: a connection failure landing right after an accepted pin
+        // belongs to that accepted pin -> downgrade it and re-queue (no fake success)
+        if (isConnFail(t) && probation.isNotEmpty()) {
+            val victim = probation.keys.last()
+            probation.remove(victim)?.let { handler.removeCallbacks(it) }
+            vault.remove(victim.pin)
+            victim.status = "PENDING"; victim.retries = 0; victim.timeouts = 0
+            log?.invoke("WARN ••••${victim.pin.takeLast(4)} downgraded after accept - re-queued")
+            save(); ui?.invoke()
+            service?.clickButton("OK")
+            return
+        }
+
         if (decided) { service?.clickButton("OK"); return }
         val item = current ?: return
 
-        // v16: "Kindly wait" = loaded = instant SUCCESS (dismiss + move on)
+        // "Kindly wait" = loaded: instant SUCCESS in UI, record committed after probation
         if (t.contains("kindly wait") || t.contains("processing")) {
             decided = true
-            ok(item, "accepted - processing")
+            item.status = "SUCCESS"; item.note = "accepted - processing (${secsStr()})"
+            vault.add(item.pin)
+            consecFails = 0
+            successRun++
+            val s = secs()
+            if (fast) avgFast = avgFast * 0.7 + s * 0.3 else avgSafe = avgSafe * 0.7 + s * 0.3
+            if (!fast && successRun % 10 == 0) {
+                cooldownUntil = System.currentTimeMillis() + COOLDOWN_MS
+                log?.invoke("COOLDOWN: 10 loaded - 10s rest")
+            }
+            log?.invoke("OK ••••${item.pin.takeLast(4)} -> ${item.target} - accepted (${secsStr()})")
+            tick()
+            val commit = Runnable {
+                probation.remove(item)
+                targets.firstOrNull { it.label == item.target }?.let { it.today++ }
+                history.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|SUCCESS|accepted - processing (${secsStr()})")
+                save(); ui?.invoke()
+            }
+            probation[item] = commit
+            handler.postDelayed(commit, PROBATION_MS)
             service?.clickButton("OK"); doubleOk(); goNext()
             return
         }
 
         when {
-            listOf("connection problem", "invalid mmi", "network error", "try again")
-                .any { t.contains(it) } -> {
+            isConnFail(t) -> {
                 if (item.retries < MAX_CONN_RETRIES) {
                     item.retries++; decided = true; item.status = "PENDING"
                     log?.invoke("RETRY ••••${item.pin.takeLast(4)} (network ${item.retries}/$MAX_CONN_RETRIES)")
@@ -448,13 +483,4 @@ object Engine {
         } catch (_: Exception) { }
         try {
             val v = appCtx?.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-            v?.vibrate(VibrationEffect.createOneShot(700, VibrationEffect.DEFAULT_AMPLITUDE))
-        } catch (_: Exception) { }
-    }
-
-    private fun short(t: String) = t.replace(Regex("\\s+"), " ").trim().take(100)
-    private fun summary(): String {
-        val s = queue.count { it.status == "SUCCESS" }; val f = queue.count { it.status == "FAILED" }
-        return "$s success, $f failed, of ${queue.size}"
-    }
-}
+            v?.vibrate(VibrationEffect.createOneShot
