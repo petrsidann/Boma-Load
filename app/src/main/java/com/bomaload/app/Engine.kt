@@ -353,8 +353,6 @@ object Engine {
             service?.respondWithNumber(current?.target ?: ""); return
         }
 
-        // PROBATION GUARD: a connection failure landing right after an accepted pin
-        // belongs to that accepted pin -> downgrade it and re-queue (no fake success)
         if (isConnFail(t) && probation.isNotEmpty()) {
             val victim = probation.keys.last()
             probation.remove(victim)?.let { handler.removeCallbacks(it) }
@@ -369,10 +367,10 @@ object Engine {
         if (decided) { service?.clickButton("OK"); return }
         val item = current ?: return
 
-        // "Kindly wait" = loaded: instant SUCCESS in UI, record committed after probation
         if (t.contains("kindly wait") || t.contains("processing")) {
             decided = true
-            item.status = "SUCCESS"; item.note = "accepted - processing (${secsStr()})"
+            val ss = secsStr()
+            item.status = "SUCCESS"; item.note = "accepted - processing ($ss)"
             vault.add(item.pin)
             consecFails = 0
             successRun++
@@ -382,12 +380,12 @@ object Engine {
                 cooldownUntil = System.currentTimeMillis() + COOLDOWN_MS
                 log?.invoke("COOLDOWN: 10 loaded - 10s rest")
             }
-            log?.invoke("OK ••••${item.pin.takeLast(4)} -> ${item.target} - accepted (${secsStr()})")
+            log?.invoke("OK ••••${item.pin.takeLast(4)} -> ${item.target} - accepted ($ss)")
             tick()
             val commit = Runnable {
                 probation.remove(item)
                 targets.firstOrNull { it.label == item.target }?.let { it.today++ }
-                history.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|SUCCESS|accepted - processing (${secsStr()})")
+                history.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|SUCCESS|accepted - processing ($ss)")
                 save(); ui?.invoke()
             }
             probation[item] = commit
@@ -456,8 +454,8 @@ object Engine {
 
     private fun tick() {
         try {
-            (appCtx?.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
-                ?.vibrate(VibrationEffect.createOneShot(60, 140))
+            val v = appCtx?.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            v?.vibrate(VibrationEffect.createOneShot(60, 140))
         } catch (_: Exception) { }
     }
 
@@ -483,4 +481,10 @@ object Engine {
         } catch (_: Exception) { }
         try {
             val v = appCtx?.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-            v?.vibrate(VibrationEffect.createOneShot
+            v?.vibrate(VibrationEffect.createOneShot(700, VibrationEffect.DEFAULT_AMPLITUDE))
+        } catch (_: Exception) { }
+    }
+
+    private fun short(t: String) = t.replace(Regex("\\s+"), " ").trim().take(100)
+    private fun summary(): String {
+        val s = queue.count { it.status == "SUCCESS" }
