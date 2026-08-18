@@ -352,11 +352,11 @@ object Engine {
         if (decided) { service?.clickButton("OK"); return }
         val item = current ?: return
 
-        // v15: dismiss the kindly-wait popup so the REAL result can appear, but do NOT decide yet
+        // v16: "Kindly wait" = loaded = instant SUCCESS (dismiss + move on)
         if (t.contains("kindly wait") || t.contains("processing")) {
-            service?.clickButton("OK")
-            doubleOk()
-            armTimeout(item)
+            decided = true
+            ok(item, "accepted - processing")
+            service?.clickButton("OK"); doubleOk(); goNext()
             return
         }
 
