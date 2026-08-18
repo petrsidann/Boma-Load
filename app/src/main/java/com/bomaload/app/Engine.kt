@@ -182,6 +182,7 @@ object Engine {
             p.size >= 4 && p[3] == "SUCCESS" && (p[0].toLongOrNull() ?: 0L) >= t0
         }
     }
+
     fun todayFails(): Int {
         val t0 = dayStart()
         return history.count { line ->
@@ -189,6 +190,7 @@ object Engine {
             p.size >= 4 && p[3] == "FAILED" && (p[0].toLongOrNull() ?: 0L) >= t0
         }
     }
+
     fun todayStats(): Pair<Int, Int> {
         val s = todayLoaded(); val f = todayFails()
         return s to (s + f)
@@ -219,8 +221,7 @@ object Engine {
             tmp[pick] = (tmp[pick] ?: 0) + 1
             assign[pick] = (assign[pick] ?: 0) + 1
         }
-        log?.invoke("PLAN: " + assign.map { (k, v) -> "$v -> ${en.first { it.number0 == k }.label}" }
-            .joinToString(", "))
+        log?.invoke("PLAN: " + assign.map { (k, v) -> "$v -> ${en.first { it.number0 == k }.label}" }.joinToString(", "))
     }
 
     fun stop() {
@@ -325,7 +326,6 @@ object Engine {
 
     fun onUssdText(text: String) {
         val t = text.lowercase()
-
         if (phase == "BALANCE") {
             val m = Regex("bal[^0-9]{0,6}([0-9][0-9,.]{2,})").find(t)
                 ?: Regex("([0-9][0-9,.]{2,})\\s*ksh").find(t)
@@ -337,22 +337,18 @@ object Engine {
             }
             return
         }
-
         if (!running) return
         if (System.currentTimeMillis() < graceUntil) return
         val now = System.currentTimeMillis()
         if (t == lastText && now - lastTextAt < 1200) return
         lastText = t; lastTextAt = now
-
         val marker = t.contains("safaricom message") || t.contains("kindly wait") ||
                 t.contains("msisdn") || t.contains("ussd") || t.contains("voucher") ||
                 t.contains("top up") || t.contains("the voucher")
         if (!marker) return
-
         if (t.contains("enter the number") || (t.contains("msisdn") && t.contains("back"))) {
             service?.respondWithNumber(current?.target ?: ""); return
         }
-
         if (isConnFail(t) && probation.isNotEmpty()) {
             val victim = probation.keys.last()
             probation.remove(victim)?.let { handler.removeCallbacks(it) }
@@ -363,10 +359,8 @@ object Engine {
             service?.clickButton("OK")
             return
         }
-
         if (decided) { service?.clickButton("OK"); return }
         val item = current ?: return
-
         if (t.contains("kindly wait") || t.contains("processing")) {
             decided = true
             val ss = secsStr()
@@ -393,7 +387,6 @@ object Engine {
             service?.clickButton("OK"); doubleOk(); goNext()
             return
         }
-
         when {
             isConnFail(t) -> {
                 if (item.retries < MAX_CONN_RETRIES) {
@@ -403,19 +396,15 @@ object Engine {
                     handler.postDelayed({ if (running) next() }, 1000)
                 } else { decided = true; fail(item, short(t)); service?.clickButton("OK"); doubleOk(); goNext() }
             }
-            listOf("been used", "already used")
-                .any { t.contains(it) } -> {
-                decided = true
-                ok(item, "already used = loaded earlier")
+            listOf("been used", "already used").any { t.contains(it) } -> {
+                decided = true; ok(item, "already used = loaded earlier")
                 service?.clickButton("OK"); doubleOk(); goNext()
             }
-            listOf("invalid", "expired", "not valid", "wrong pin",
-                "does not exist", "error from application")
+            listOf("invalid", "expired", "not valid", "wrong pin", "does not exist", "error from application")
                 .any { t.contains(it) } -> {
                 decided = true; fail(item, short(t)); service?.clickButton("OK"); doubleOk(); goNext()
             }
-            listOf("successfully", "topped up", "top up successful", "new balance", "your balance",
-                "confirmed", "recharge")
+            listOf("successfully", "topped up", "top up successful", "new balance", "your balance", "confirmed", "recharge")
                 .any { t.contains(it) } -> {
                 decided = true; ok(item, short(t)); service?.clickButton("OK"); doubleOk(); goNext()
             }
@@ -460,7 +449,9 @@ object Engine {
     }
 
     fun historyList(): List<String> = history.reversed()
+
     fun clearHistory() { history.clear(); save(); }
+
     fun retryFailed(): Int {
         var n = 0
         history.filter { it.contains("|FAILED|") && !isDefinitive(it.substringAfter("|FAILED|", "")) }
@@ -486,5 +477,9 @@ object Engine {
     }
 
     private fun short(t: String) = t.replace(Regex("\\s+"), " ").trim().take(100)
+
     private fun summary(): String {
-        val s = queue.count { it.status == "SUCCESS" }
+        val s = queue.count { it.status == "SUCCESS" }; val f = queue.count { it.status == "FAILED" }
+        return "$s success, $failed, of ${queue.size}"
+    }
+}
