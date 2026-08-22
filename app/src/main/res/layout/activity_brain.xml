@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="14dp" android:background="#0B0E11">
+
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="BOMA BRAIN" android:textColor="#F0B90B" android:textSize="22sp"
+        android:textStyle="bold" android:letterSpacing="0.08"/>
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="in-app copilot - knows every pin, skip and ghost"
+        android:textColor="#848E9C" android:textSize="11sp"/>
+
+    <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="10dp" android:scrollbars="none">
+        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button android:id="@+id/cToday" android:layout_width="wrap_content" android:layout_height="38dp"
+                android:text="TODAY" android:textSize="10sp" android:background="@drawable/btn_bg"
+                android:textColor="#EAECEF" android:layout_marginEnd="6dp"/>
+            <Button android:id="@+id/cSkips" android:layout_width="wrap_content" android:layout_height="38dp"
+                android:text="SKIPS" android:textSize="10sp" android:background="@drawable/btn_bg"
+                android:textColor="#F6465D" android:layout_marginEnd="6dp"/>
+            <Button android:id="@+id/cGhosts" android:layout_width="wrap_content" android:layout_height="38dp"
+                android:text="GHOSTS" android:textSize="10sp" android:background="@drawable/btn_bg"
+                android:textColor="#F0B90B" android:layout_marginEnd="6dp"/>
+            <Button android:id="@+id/cProblems" android:layout_width="wrap_content" android:layout_height="38dp"
+                android:text="PROBLEMS" android:textSize="10sp" android:background="@drawable/btn_bg"
+                android:textColor="#F6465D" android:layout_marginEnd="6dp"/>
+            <Button android:id="@+id/cSpeed" android:layout_width="wrap_content" android:layout_height="38dp"
+                android:text="SPEED" android:textSize="10sp" android:background="@drawable/btn_bg"
+                android:textColor="#0ECB81" android:layout_marginEnd="6dp"/>
+            <Button android:id="@+id/cRequeue" android:layout_width="wrap_content" android:layout_height="38dp"
+                android:text="REQUEUE" android:textSize="10sp" android:background="@drawable/btn_bg"
+                android:textColor="#0ECB81"/>
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <ScrollView android:id="@+id/scChat" android:layout_width="match_parent"
+        android:layout_height="0dp" android:layout_weight="1" android:layout_marginTop="10dp">
+        <LinearLayout android:id="@+id/llChat" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical"/>
+    </ScrollView>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:layout_marginTop="10dp">
+        <EditText android:id="@+id/etMsg" android:layout_width="0dp" android:layout_weight="1"
+            android:layout_height="wrap_content" android:hint="Ask the brain anything..."
+            android:textColor="#EAECEF" android:textColorHint="#4A5158" android:textSize="13sp"/>
+        <Button android:id="@+id/bSend" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="SEND" android:background="@drawable/btn_green" android:textColor="#0B0E11"/>
+    </LinearLayout>
+    <Button android:id="@+id/bBack" android:layout_width="match_parent" android:layout_height="44dp"
+        android:text="BACK" android:background="@drawable/btn_bg" android:textColor="#EAECEF"
+        android:layout_marginTop="8dp"/>
+</LinearLayout>
