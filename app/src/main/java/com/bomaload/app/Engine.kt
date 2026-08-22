@@ -12,7 +12,7 @@ import android.os.Vibrator
 import android.provider.Settings
 
 object Engine {
-    data class PinItem(val pin: String, var status: String = "PENDING", var note: String = "", var target: String = "", var retries: Int = 0, var timeouts: Int = 0)
+    data class PinItem(val pin: String, var status: String = "PENDING", var note: String = "", var target: String = "", var retries: Int = 0, var timeouts: Int = 0, var pend: String = "", var journey: String = "")
     data class Target(val number0: String, val label: String, var enabled: Boolean, var today: Int = 0, var nextAt: Long = 0L)
     data class AddResult(val new: Int, val used: Int, val usedPins: List<String>)
 
@@ -26,31 +26,25 @@ object Engine {
     var ui: (() -> Unit)? = null
     var log: ((String) -> Unit)? = null
     var balance = ""
+    var lastBatchSecs: Long = 0
+    var lastBatchCount: Int = 0
+    var downgrades: Int = 0
 
     const val SAFE_GAP_MS = 2500L
     const val FAST_GAP_MS = 250L
     const val COOLDOWN_MS = 10_000L
     const val TIMEOUT_MS = 10_000L
-    const val PROBATION_MS = 5000L
     const val MAX_CONN_RETRIES = 3
     const val MAX_SWEEPS = 2
-
-    private var avgSafe = 4.0
-    private var avgFast = 3.0
+    private fun settleMs() = if (fast) 1500L else 2000L
 
     fun speedName() = if (fast) "FAST" else "SAFE"
     private fun gapMs() = if (fast) FAST_GAP_MS else SAFE_GAP_MS
     private fun nextMs() = if (fast) FAST_GAP_MS else 800L
-
-    fun estimateSec(pending: Int, fastMode: Boolean): Long {
-        val per = if (fastMode) avgFast else avgSafe
-        val cool = if (fastMode) 0 else (pending / 10) * 10
-        return (pending * per).toLong() + cool
-    }
+    fun estimateSec(p: Int, f: Boolean) = Ledger.estimateSec(p, f)
 
     private val handler = Handler(Looper.getMainLooper())
     private var current: PinItem? = null
-    private var decided = false
     private var phase = "IDLE"
     private var consecFails = 0
     private var successRun = 0
@@ -62,22 +56,14 @@ object Engine {
     private var lastTextAt = 0L
     private var batchStartAt = 0L
     private var pendingTimeout: Runnable? = null
-    private val probation = linkedMapOf<PinItem, Runnable>()
-    private val vault = mutableSetOf<String>()
-    private val history = mutableListOf<String>()
+    private var settleRun: Runnable? = null
 
-    private fun dayStart(): Long {
-        val cal = java.util.Calendar.getInstance()
-        cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
-        cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
-        return cal.timeInMillis
-    }
+    private fun dayStart() = Ledger.dayStart()
 
     fun init(ctx: Context) {
         appCtx = ctx
+        Ledger.init(ctx)
         val sp = ctx.getSharedPreferences("boma", Context.MODE_PRIVATE)
-        vault.addAll(sp.getStringSet("vault", emptySet()) ?: emptySet())
-        history.addAll((sp.getString("history", "") ?: "").split("\n").filter { it.isNotBlank() })
         targets.clear()
         targets.add(Target("SELF", "My Number (SIM)", true))
         val saved = sp.getString("targets", "0111363967|1\n0115108066|1") ?: "0111363967|1\n0115108066|1"
@@ -86,8 +72,6 @@ object Engine {
             if (p.size == 2 && p[0].length >= 10) targets.add(Target(p[0], p[0], p[1] == "1"))
         }
         fast = sp.getBoolean("turbo", false)
-        avgSafe = sp.getFloat("avgSafe", 4f).toDouble()
-        avgFast = sp.getFloat("avgFast", 3f).toDouble()
         queue.clear()
         (sp.getString("queue", "") ?: "").split("\n").forEach { line ->
             val p = line.split("|")
@@ -95,7 +79,7 @@ object Engine {
         }
         val t0 = dayStart()
         targets.forEach { t ->
-            t.today = history.count { line ->
+            t.today = Ledger.history.count { line ->
                 val p = line.split("|")
                 p.size >= 4 && p[3] == "SUCCESS" && (p[0].toLongOrNull() ?: 0L) >= t0 && p[2] == t.label
             }
@@ -105,31 +89,45 @@ object Engine {
     fun save() {
         val sp = appCtx?.getSharedPreferences("boma", Context.MODE_PRIVATE) ?: return
         sp.edit()
-            .putStringSet("vault", vault.toSet())
-            .putString("history", history.joinToString("\n"))
             .putString("queue", queue.joinToString("\n") { "${it.pin}|${it.status}" })
             .putString("targets", targets.filter { it.number0 != "SELF" }
                 .joinToString("\n") { "${it.number0}|${if (it.enabled) "1" else "0" }" })
             .putBoolean("turbo", fast)
-            .putFloat("avgSafe", avgSafe.toFloat())
-            .putFloat("avgFast", avgFast.toFloat())
             .apply()
+        Ledger.save()
     }
 
-    fun inVault(p: String) = vault.contains(p)
-    fun vaultList(): List<String> = vault.toList().sorted()
-    fun vaultRemove(p: String) { vault.remove(p); save(); ui?.invoke() }
-    fun vaultClear() { vault.clear(); save(); ui?.invoke() }
+    fun inVault(p: String) = Ledger.inVault(p)
+    fun vaultList() = Ledger.vaultList()
+    fun vaultRemove(p: String) { Ledger.vaultRemove(p); ui?.invoke() }
+    fun vaultClear() { Ledger.vaultClear(); ui?.invoke() }
+    fun historyList() = Ledger.historyList()
+    fun clearHistory() { Ledger.clearHistory() }
+    fun todayLoaded() = Ledger.todayLoaded()
+    fun todayFails() = Ledger.todayFails()
+    fun todayStats() = Ledger.todayStats()
 
     fun clearQueue() {
         if (!running) { queue.clear(); review.clear(); save(); ui?.invoke() }
+    }
+
+    fun ghostList(): List<PinItem> = queue.filter { Ledger.inVault(it.pin) }
+    fun purgeGhosts(): Int {
+        val g = ghostList()
+        queue.removeAll(g)
+        val before = queue.size
+        val seen = mutableSetOf<String>()
+        queue.removeAll { !seen.add(it.pin) }
+        val removed = g.size + (before - queue.size)
+        save(); ui?.invoke()
+        return removed
     }
 
     fun addPins(list: List<String>): AddResult {
         var new = 0; val usedPins = mutableListOf<String>()
         list.forEach { p ->
             when {
-                vault.contains(p) -> usedPins.add(p)
+                Ledger.inVault(p) -> usedPins.add(p)
                 queue.none { it.pin == p } -> { queue.add(PinItem(p)); new++ }
             }
         }
@@ -140,32 +138,42 @@ object Engine {
     fun addPin(p: String) { addPins(listOf(p)) }
     fun removeAt(i: Int) { if (!running && i in queue.indices) { queue.removeAt(i); save(); ui?.invoke() } }
     fun promoteReview(i: Int) {
-        if (i in review.indices) { queue.add(PinItem(review.removeAt(i))); save(); ui?.invoke() }
+        if (i in review.indices) {
+            val rv = review.removeAt(i)
+            if (queue.none { it.pin == rv }) queue.add(PinItem(rv))
+            save(); ui?.invoke()
+        }
     }
     fun dropReview(i: Int) {
         if (i in review.indices) { review.removeAt(i); save(); ui?.invoke() }
     }
+    fun clearReview() { review.clear(); save(); ui?.invoke() }
     fun addTarget(num0: String) {
         if (targets.none { it.number0 == num0 }) { targets.add(Target(num0, num0, true)); save(); ui?.invoke() }
     }
     fun removeTarget(num0: String) {
-        if (num0 != "SELF" && !running) {
-            targets.removeAll { it.number0 == num0 }
-            save(); ui?.invoke()
-        }
+        if (num0 != "SELF" && !running) { targets.removeAll { it.number0 == num0 }; save(); ui?.invoke() }
     }
 
     fun requeueUnloaded(): Int {
         var n = 0
         queue.forEach {
             if (it.status == "FAILED" && !isDefinitive(it.note)) {
-                it.status = "PENDING"; it.retries = 0; it.timeouts = 0; n++
+                it.status = "PENDING"; it.retries = 0; it.timeouts = 0; it.pend = ""; it.journey = ""; n++
             }
         }
-        review.forEach { queue.add(PinItem(it)); n++ }
+        review.forEach { rv -> if (queue.none { it.pin == rv }) queue.add(PinItem(rv)); n++ }
         review.clear()
         save(); ui?.invoke()
         return n
+    }
+
+    fun todaySkips(): List<String> {
+        val t0 = dayStart()
+        return Ledger.history.filter { line ->
+            val p = line.split("|")
+            p.size >= 5 && p[3] == "FAILED" && (p[0].toLongOrNull() ?: 0L) >= t0 && isRetryable(p[4])
+        }.mapNotNull { it.split("|").getOrNull(1) }
     }
 
     private fun isDefinitive(note: String) =
@@ -174,27 +182,6 @@ object Engine {
         listOf("timeout", "connection", "mmi", "network", "no confirmation").any { note.contains(it, true) }
     private fun isConnFail(t: String) =
         listOf("connection problem", "invalid mmi", "network error", "try again").any { t.contains(it) }
-
-    fun todayLoaded(): Int {
-        val t0 = dayStart()
-        return history.count { line ->
-            val p = line.split("|")
-            p.size >= 4 && p[3] == "SUCCESS" && (p[0].toLongOrNull() ?: 0L) >= t0
-        }
-    }
-
-    fun todayFails(): Int {
-        val t0 = dayStart()
-        return history.count { line ->
-            val p = line.split("|")
-            p.size >= 4 && p[3] == "FAILED" && (p[0].toLongOrNull() ?: 0L) >= t0
-        }
-    }
-
-    fun todayStats(): Pair<Int, Int> {
-        val s = todayLoaded(); val f = todayFails()
-        return s to (s + f)
-    }
 
     fun accessibilityOn(ctx: Context): Boolean {
         val s = Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
@@ -240,9 +227,7 @@ object Engine {
         dial("*144#")
         handler.postDelayed({
             if (phase == "BALANCE") {
-                phase = "IDLE"
-                log?.invoke("BAL: no response")
-                service?.clickButton("OK")
+                phase = "IDLE"; log?.invoke("BAL: no response"); service?.clickButton("OK")
             }
         }, TIMEOUT_MS)
     }
@@ -251,15 +236,14 @@ object Engine {
         val retryable = queue.filter { it.status == "FAILED" && isRetryable(it.note) }
         if (sweep < MAX_SWEEPS && retryable.isNotEmpty()) {
             sweep++
-            retryable.forEach { it.status = "PENDING"; it.retries = 0; it.timeouts = 0 }
+            retryable.forEach { it.status = "PENDING"; it.retries = 0; it.timeouts = 0; it.pend = ""; it.journey = "" }
             log?.invoke("SWEEP $sweep: healing ${retryable.size} pin(s)")
-            ui?.invoke()
-            next()
-            return
+            ui?.invoke(); next(); return
         }
         running = false; phase = "IDLE"
-        val secs = (System.currentTimeMillis() - batchStartAt) / 1000
-        log?.invoke("DONE in ${secs}s. " + summary())
+        lastBatchSecs = (System.currentTimeMillis() - batchStartAt) / 1000
+        lastBatchCount = queue.count { it.status == "SUCCESS" || it.status == "FAILED" }
+        log?.invoke("DONE: $lastBatchCount pins in ${lastBatchSecs}s. " + summary())
         celebrate(); save(); ui?.invoke()
     }
 
@@ -281,8 +265,9 @@ object Engine {
     private fun send(item: PinItem, t: Target) {
         if (!running) return
         phase = "TOPUP"
-        current = item; decided = false
+        current = item
         item.status = "LOADING"; item.target = t.label
+        item.pend = ""; item.journey = "DIAL"
         t.nextAt = System.currentTimeMillis() + gapMs()
         ui?.invoke()
         dialAt = System.currentTimeMillis()
@@ -297,18 +282,81 @@ object Engine {
     private fun armTimeout(item: PinItem) {
         pendingTimeout?.let { handler.removeCallbacks(it) }
         val r = Runnable {
-            if (!decided && current == item && running && phase == "TOPUP") {
+            if (current == item && running && phase == "TOPUP" && item.pend == "") {
                 if (item.timeouts < 1) {
-                    item.timeouts++; decided = true; item.status = "PENDING"
+                    item.timeouts++; item.journey += "+RETRY"
                     log?.invoke("RETRY ••••${item.pin.takeLast(4)} (no response)")
-                    handler.postDelayed({ if (running) next() }, 300)
-                } else {
-                    fail(item, "No confirmation (timeout)"); goNext()
-                }
+                    handler.postDelayed({
+                        if (running) send(item, targets.firstOrNull { tg -> tg.label == item.target } ?: return@postDelayed)
+                    }, 300)
+                } else pendFail(item, "No confirmation (timeout)", "TIMEOUT")
             }
         }
         pendingTimeout = r
         handler.postDelayed(r, TIMEOUT_MS)
+    }
+
+    private fun startSettle(item: PinItem) {
+        settleRun?.let { handler.removeCallbacks(it) }
+        val r = Runnable { if (current == item && running && item.pend != "") commit(item) }
+        settleRun = r
+        handler.postDelayed(r, settleMs())
+    }
+
+    private fun commit(item: PinItem) {
+        val ss = secsStr()
+        if (item.pend == "OK") {
+            item.status = "SUCCESS"
+            targets.firstOrNull { it.label == item.target }?.let { it.today++ }
+            Ledger.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|SUCCESS|${item.journey} ($ss)")
+            consecFails = 0; successRun++
+            Ledger.learn(fast, secs())
+            if (!fast && successRun % 10 == 0) {
+                cooldownUntil = System.currentTimeMillis() + COOLDOWN_MS
+                log?.invoke("COOLDOWN: 10 loaded - 10s rest")
+            }
+            log?.invoke("OK ••••${item.pin.takeLast(4)} -> ${item.target} ${item.journey} ($ss)")
+            tick()
+        } else {
+            item.status = "FAILED"
+            Ledger.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|FAILED|${item.journey} - ${item.note} ($ss)")
+            consecFails++
+            log?.invoke("FAIL ••••${item.pin.takeLast(4)} -> ${item.target} ${item.journey} - ${item.note} ($ss)")
+            if (consecFails >= 3) { log?.invoke("HALT: 3 fails in a row - rest that line"); stop() }
+        }
+        save(); ui?.invoke()
+        goNext()
+    }
+
+    private fun pendOk(item: PinItem, tag: String) {
+        item.pend = "OK"; item.journey += "+$tag"
+        item.status = "SUCCESS"
+        Ledger.vaultAdd(item.pin)
+        service?.clickButton("OK"); doubleOk()
+        startSettle(item)
+    }
+
+    private fun pendFail(item: PinItem, note: String, tag: String) {
+        item.pend = "FAIL"; item.note = note; item.journey += "+$tag"
+        item.status = "FAILED"
+        service?.clickButton("OK"); doubleOk()
+        startSettle(item)
+    }
+
+    private fun downgrade(item: PinItem) {
+        downgrades++
+        Ledger.vault.remove(item.pin)
+        settleRun?.let { handler.removeCallbacks(it) }
+        item.pend = ""; item.status = "PENDING"; item.retries++
+        item.journey += "+CONN"
+        log?.invoke("WARN ••••${item.pin.takeLast(4)} connection after accept - retry ${item.retries}/$MAX_CONN_RETRIES")
+        Ledger.save(); save(); ui?.invoke()
+        service?.clickButton("OK")
+        if (item.retries <= MAX_CONN_RETRIES) {
+            handler.postDelayed({
+                if (running) send(item, targets.firstOrNull { tg -> tg.label == item.target } ?: return@postDelayed)
+            }, 1000)
+        } else pendFail(item, "connection problem (retries exhausted)", "DEAD")
     }
 
     private fun goNext() = handler.postDelayed({ if (running) next() }, nextMs())
@@ -346,118 +394,57 @@ object Engine {
                 t.contains("msisdn") || t.contains("ussd") || t.contains("voucher") ||
                 t.contains("top up") || t.contains("the voucher")
         if (!marker) return
-        if (t.contains("enter the number") || (t.contains("msisdn") && t.contains("back"))) {
-            service?.respondWithNumber(current?.target ?: ""); return
-        }
-        if (isConnFail(t) && probation.isNotEmpty()) {
-            val victim = probation.keys.last()
-            probation.remove(victim)?.let { handler.removeCallbacks(it) }
-            vault.remove(victim.pin)
-            victim.status = "PENDING"; victim.retries = 0; victim.timeouts = 0
-            log?.invoke("WARN ••••${victim.pin.takeLast(4)} downgraded after accept - re-queued")
-            save(); ui?.invoke()
-            service?.clickButton("OK")
-            return
-        }
-        if (decided) { service?.clickButton("OK"); return }
         val item = current ?: return
-        if (t.contains("kindly wait") || t.contains("processing")) {
-            decided = true
-            val ss = secsStr()
-            item.status = "SUCCESS"; item.note = "accepted - processing ($ss)"
-            vault.add(item.pin)
-            consecFails = 0
-            successRun++
-            val s = secs()
-            if (fast) avgFast = avgFast * 0.7 + s * 0.3 else avgSafe = avgSafe * 0.7 + s * 0.3
-            if (!fast && successRun % 10 == 0) {
-                cooldownUntil = System.currentTimeMillis() + COOLDOWN_MS
-                log?.invoke("COOLDOWN: 10 loaded - 10s rest")
-            }
-            log?.invoke("OK ••••${item.pin.takeLast(4)} -> ${item.target} - accepted ($ss)")
-            tick()
-            val commit = Runnable {
-                probation.remove(item)
-                targets.firstOrNull { it.label == item.target }?.let { it.today++ }
-                history.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|SUCCESS|accepted - processing ($ss)")
-                save(); ui?.invoke()
-            }
-            probation[item] = commit
-            handler.postDelayed(commit, PROBATION_MS)
-            service?.clickButton("OK"); doubleOk(); goNext()
-            return
+        if (t.contains("enter the number") || (t.contains("msisdn") && t.contains("back"))) {
+            service?.respondWithNumber(item.target); return
         }
+        val good = t.contains("kindly wait") || t.contains("processing") ||
+                listOf("successfully", "topped up", "top up successful", "new balance", "your balance", "confirmed", "recharge").any { t.contains(it) }
+        val used = t.contains("been used") || t.contains("already used")
+        val dead = listOf("invalid", "expired", "not valid", "wrong pin", "does not exist", "error from application").any { t.contains(it) }
         when {
             isConnFail(t) -> {
-                if (item.retries < MAX_CONN_RETRIES) {
-                    item.retries++; decided = true; item.status = "PENDING"
-                    log?.invoke("RETRY ••••${item.pin.takeLast(4)} (network ${item.retries}/$MAX_CONN_RETRIES)")
-                    service?.clickButton("OK")
-                    handler.postDelayed({ if (running) next() }, 1000)
-                } else { decided = true; fail(item, short(t)); service?.clickButton("OK"); doubleOk(); goNext() }
+                if (item.pend == "OK") downgrade(item)
+                else if (item.pend == "") {
+                    if (item.retries < MAX_CONN_RETRIES) {
+                        item.retries++; item.journey += "+CONN"
+                        log?.invoke("RETRY ••••${item.pin.takeLast(4)} (network ${item.retries}/$MAX_CONN_RETRIES)")
+                        service?.clickButton("OK")
+                        handler.postDelayed({
+                            if (running) send(item, targets.firstOrNull { tg -> tg.label == item.target } ?: return@postDelayed)
+                        }, 1000)
+                    } else pendFail(item, short(t), "CONN")
+                } else service?.clickButton("OK")
             }
-            listOf("been used", "already used").any { t.contains(it) } -> {
-                decided = true; ok(item, "already used = loaded earlier")
-                service?.clickButton("OK"); doubleOk(); goNext()
+            good || used -> {
+                if (item.pend == "") pendOk(item, if (used) "USED" else "WAIT")
+                else if (item.pend == "FAIL") {
+                    Ledger.vaultAdd(item.pin)
+                    item.pend = "OK"; item.status = "SUCCESS"; item.journey += "+${if (used) "USED" else "WAIT"}"
+                    startSettle(item)
+                } else service?.clickButton("OK")
             }
-            listOf("invalid", "expired", "not valid", "wrong pin", "does not exist", "error from application")
-                .any { t.contains(it) } -> {
-                decided = true; fail(item, short(t)); service?.clickButton("OK"); doubleOk(); goNext()
+            dead -> {
+                if (item.pend == "") pendFail(item, short(t), "DEAD")
+                else service?.clickButton("OK")
             }
-            listOf("successfully", "topped up", "top up successful", "new balance", "your balance", "confirmed", "recharge")
-                .any { t.contains(it) } -> {
-                decided = true; ok(item, short(t)); service?.clickButton("OK"); doubleOk(); goNext()
-            }
+            else -> service?.clickButton("OK")
         }
-    }
-
-    private fun ok(item: PinItem, m: String) {
-        item.status = "SUCCESS"; item.note = "$m (${secsStr()})"
-        vault.add(item.pin)
-        targets.firstOrNull { it.label == item.target }?.let { it.today++ }
-        history.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|SUCCESS|${m.replace("|", "/")} (${secsStr()})")
-        consecFails = 0
-        successRun++
-        val s = secs()
-        if (fast) avgFast = avgFast * 0.7 + s * 0.3 else avgSafe = avgSafe * 0.7 + s * 0.3
-        if (!fast && successRun % 10 == 0) {
-            cooldownUntil = System.currentTimeMillis() + COOLDOWN_MS
-            log?.invoke("COOLDOWN: 10 loaded - 10s rest")
-        }
-        log?.invoke("OK ••••${item.pin.takeLast(4)} -> ${item.target} - $m (${secsStr()})")
-        tick()
-        save(); ui?.invoke()
-    }
-
-    private fun fail(item: PinItem, m: String) {
-        item.status = "FAILED"; item.note = "$m (${secsStr()})"
-        history.add("${System.currentTimeMillis()}|${item.pin}|${item.target}|FAILED|${m.replace("|", "/")} (${secsStr()})")
-        consecFails++
-        log?.invoke("FAIL ••••${item.pin.takeLast(4)} -> ${item.target} - $m (${secsStr()})")
-        if (consecFails >= 3) {
-            log?.invoke("HALT: 3 fails in a row - rest that line")
-            stop()
-        }
-        save(); ui?.invoke()
     }
 
     private fun tick() {
         try {
-            val v = appCtx?.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-            v?.vibrate(VibrationEffect.createOneShot(60, 140))
+            (appCtx?.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
+                ?.vibrate(VibrationEffect.createOneShot(60, 140))
         } catch (_: Exception) { }
     }
 
-    fun historyList(): List<String> = history.reversed()
-
-    fun clearHistory() { history.clear(); save(); }
-
     fun retryFailed(): Int {
         var n = 0
-        history.filter { it.contains("|FAILED|") && !isDefinitive(it.substringAfter("|FAILED|", "")) }
+        Ledger.history.filter { it.contains("|FAILED|") && !isDefinitive(it.substringAfter("|FAILED|", "")) }
             .forEach { line ->
                 val pin = line.split("|").getOrNull(1) ?: return@forEach
-                if (pin.length == 16 && !vault.contains(pin) && queue.none { it.pin == pin }) {
+                if (pin.length == 16 && !Ledger.inVault(pin) && queue.none { it.pin == pin }) {
                     queue.add(PinItem(pin)); n++
                 }
             }
@@ -471,13 +458,12 @@ object Engine {
             tg.startTone(ToneGenerator.TONE_CDMA_ABBR_ALERT, 700)
         } catch (_: Exception) { }
         try {
-            val v = appCtx?.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-            v?.vibrate(VibrationEffect.createOneShot(700, VibrationEffect.DEFAULT_AMPLITUDE))
+            (appCtx?.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
+                ?.vibrate(VibrationEffect.createOneShot(700, VibrationEffect.DEFAULT_AMPLITUDE))
         } catch (_: Exception) { }
     }
 
     private fun short(t: String) = t.replace(Regex("\\s+"), " ").trim().take(100)
-
     private fun summary(): String {
         val s = queue.count { it.status == "SUCCESS" }; val f = queue.count { it.status == "FAILED" }
         return "$s success, $f failed, of ${queue.size}"
