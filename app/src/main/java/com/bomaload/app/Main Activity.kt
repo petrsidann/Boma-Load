@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.provider.Settings
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -55,6 +56,14 @@ class MainActivity : AppCompatActivity() {
         bindCollapse(R.id.hLoad, R.id.cLoad)
         bindCollapse(R.id.hTerm, R.id.cTerm)
 
+        // terminal claims the touch so you can scroll it freely
+        val term = findViewById<ScrollView>(R.id.cTerm)
+        term.setOnTouchListener { v, ev ->
+            v.parent.requestDisallowInterceptTouchEvent(true)
+            if (ev.action == MotionEvent.ACTION_UP) v.parent.requestDisallowInterceptTouchEvent(false)
+            false
+        }
+
         findViewById<Button>(R.id.btnUpload).setOnClickListener {
             val i = Intent(Intent.ACTION_GET_CONTENT).apply {
                 type = "image/*"; putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
@@ -88,16 +97,12 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnMode).setOnClickListener {
             Engine.fast = !Engine.fast
             Engine.save(); render()
-            toast(if (Engine.fast) "FAST: maximum speed, no breaks" else "SAFE: 2.5s gap + 10s rest per 10")
+            toast(if (Engine.fast) "FAST: maximum speed" else "SAFE: 2.5s gap + 10s rest per 10")
         }
-        findViewById<Button>(R.id.btnRequeue).setOnClickListener {
-            toast("${Engine.requeueUnloaded()} re-queued")
-        }
-        findViewById<Button>(R.id.btnClearQ).setOnClickListener {
-            Engine.clearQueue()
-            toast("Queue cleared")
-        }
+        findViewById<Button>(R.id.btnRequeue).setOnClickListener { toast("${Engine.requeueUnloaded()} re-queued") }
+        findViewById<Button>(R.id.btnClearQ).setOnClickListener { Engine.clearQueue(); toast("Queue cleared") }
         findViewById<Button>(R.id.btnHistory).setOnClickListener { startActivity(Intent(this, HistoryActivity::class.java)) }
+        findViewById<Button>(R.id.btnBrain).setOnClickListener { startActivity(Intent(this, BrainActivity::class.java)) }
         findViewById<Button>(R.id.btnStart).setOnClickListener { startAutomation() }
         findViewById<Button>(R.id.btnStop).setOnClickListener { Engine.stop() }
         findViewById<Button>(R.id.btnBalance).setOnClickListener { Engine.checkBalance() }
@@ -232,7 +237,7 @@ class MainActivity : AppCompatActivity() {
         q.removeAllViews()
         Engine.queue.forEachIndexed { i, p ->
             val tv = TextView(this)
-            tv.text = "${i + 1}.  •••• ${p.pin.takeLast(4)}  ->  ${if (p.target.isEmpty()) "-" else p.target}   [${p.status}] ${p.note}"
+            tv.text = "${i + 1}.  •••• ${p.pin.takeLast(4)}  ->  ${if (p.target.isEmpty()) "-" else p.target}   [${p.status}] ${p.journey} ${p.note}"
             tv.setTextColor(0xFFEAECEF.toInt())
             tv.textSize = 12f
             tv.setPadding(16, 14, 16, 14)
@@ -279,9 +284,12 @@ class MainActivity : AppCompatActivity() {
         val done = Engine.queue.count { it.status == "SUCCESS" || it.status == "FAILED" }
         val pend = Engine.queue.count { it.status == "PENDING" }
         findViewById<ProgressBar>(R.id.pb).progress = if (total > 0) done * 100 / total else 0
-        val eta = if (Engine.running && pend > 0) Engine.estimateSec(pend, Engine.fast) else 0
-        findViewById<TextView>(R.id.tvProgress).text =
-            "$done of $total processed" + if (eta > 0) "  ·  ~${eta}s left" else ""
+        val prog = findViewById<TextView>(R.id.tvProgress)
+        prog.text = when {
+            Engine.running -> "$done of $total processed · ~${Engine.estimateSec(pend, Engine.fast)}s left"
+            Engine.lastBatchCount > 0 -> "$done of $total processed · last batch: ${Engine.lastBatchCount} pins in ${Engine.lastBatchSecs}s"
+            else -> "$done of $total processed"
+        }
 
         findViewById<TextView>(R.id.tvBalance).text =
             if (Engine.balance.isEmpty()) "Ksh 0.00" else "Ksh ${Engine.balance}"
@@ -292,8 +300,7 @@ class MainActivity : AppCompatActivity() {
         val rate = if (tot > 0) s * 100 / tot else 100
         findViewById<TextView>(R.id.tvBMode).text = Engine.speedName()
         findViewById<TextView>(R.id.tvBToday).text = "TODAY $s · ${rate}%"
-        findViewById<Button>(R.id.btnMode).text =
-            if (Engine.fast) "MODE: FAST" else "MODE: SAFE"
+        findViewById<Button>(R.id.btnMode).text = if (Engine.fast) "MODE: FAST" else "MODE: SAFE"
     }
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
